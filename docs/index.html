@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fine Print — Self-Hosted Photo Printing Kiosk</title>
+    <style>
+        :root {
+            --bg: #0a0a0a;
+            --surface: #141414;
+            --border: #2a2a2a;
+            --text: #e8e8e8;
+            --muted: #888;
+            --accent: #4a9eff;
+            --success: #4ade80;
+            --danger: #f87171;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Hero */
+        .hero {
+            text-align: center;
+            padding: 80px 0 60px;
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            margin-bottom: 16px;
+        }
+
+        .hero h1 span { color: var(--accent); }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--muted);
+            max-width: 600px;
+            margin: 0 auto 32px;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 14px 28px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 1rem;
+            text-decoration: none;
+            transition: opacity 0.15s;
+        }
+
+        .btn:hover { opacity: 0.85; }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+
+        /* Features */
+        .features {
+            padding: 60px 0;
+        }
+
+        .features h2 {
+            text-align: center;
+            font-size: 2rem;
+            margin-bottom: 40px;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 20px;
+        }
+
+        .feature-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+        }
+
+        .feature-card h3 {
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+        }
+
+        .feature-card p {
+            font-size: 0.9rem;
+            color: var(--muted);
+        }
+
+        .feature-icon {
+            font-size: 1.5rem;
+            margin-bottom: 12px;
+        }
+
+        /* Quick Start */
+        .quickstart {
+            padding: 60px 0;
+        }
+
+        .quickstart h2 {
+            text-align: center;
+            font-size: 2rem;
+            margin-bottom: 32px;
+        }
+
+        .code-block {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px 24px;
+            overflow-x: auto;
+            margin-bottom: 20px;
+        }
+
+        .code-block code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.9rem;
+            color: var(--text);
+            line-height: 1.8;
+        }
+
+        .code-block .comment { color: #666; }
+        .code-block .cmd { color: var(--accent); }
+
+        /* Architecture */
+        .arch {
+            padding: 60px 0;
+        }
+
+        .arch h2 {
+            text-align: center;
+            font-size: 2rem;
+            margin-bottom: 16px;
+        }
+
+        .arch > p {
+            text-align: center;
+            color: var(--muted);
+            margin-bottom: 32px;
+        }
+
+        .tech-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .tech-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .tech-card h4 {
+            font-size: 0.95rem;
+            margin-bottom: 4px;
+        }
+
+        .tech-card p {
+            font-size: 0.8rem;
+            color: var(--muted);
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 40px 0;
+            border-top: 1px solid var(--border);
+            margin-top: 60px;
+            color: var(--muted);
+            font-size: 0.85rem;
+        }
+
+        footer a { color: var(--accent); text-decoration: none; }
+
+        @media (max-width: 600px) {
+            .hero h1 { font-size: 2.5rem; }
+            .hero p { font-size: 1.1rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <section class="hero">
+        <h1>Fine <span>Print</span></h1>
+        <p>Self-hosted photo printing kiosk. WiFi hotspot, photo editing, instant 4x6 prints — no internet required.</p>
+        <div class="hero-buttons">
+            <a href="https://github.com/scout-kit/fine-print" class="btn btn-primary">View on GitHub</a>
+            <a href="#quickstart" class="btn btn-secondary">Quick Start</a>
+        </div>
+    </section>
+
+    <section class="features">
+        <h2>Features</h2>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="feature-icon">📶</div>
+                <h3>WiFi Hotspot</h3>
+                <p>Turn any machine into a hotspot with captive portal. Guests connect and start uploading instantly.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">✂️</div>
+                <h3>Image Editor</h3>
+                <p>Crop, rotate, adjust brightness/contrast/saturation. Per-photo edits with persistent state.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🎨</div>
+                <h3>Templates</h3>
+                <p>Project-level overlays and text with landscape + portrait support. Copy between orientations.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🖨️</div>
+                <h3>Print Queue</h3>
+                <p>CUPS integration with multi-printer support. Round-robin or manual assignment. Configurable copies.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📸</div>
+                <h3>Photo Booth</h3>
+                <p>Live camera viewfinder with countdown timer. Capture, edit, and print — all from the browser.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3>HTTPS + Offline</h3>
+                <p>Auto-generated TLS certificates for camera access. Runs entirely offline on local network.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📱</div>
+                <h3>Mobile-First</h3>
+                <p>Touch-friendly UI designed for phones. QR codes for easy project access.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔧</div>
+                <h3>Admin Dashboard</h3>
+                <p>Photo review, queue management, project settings, printer configuration, font uploads.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🌐</div>
+                <h3>Cross-Platform</h3>
+                <p>macOS, Linux, Raspberry Pi. Single binary deployment. Docker for development.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="quickstart" id="quickstart">
+        <h2>Quick Start</h2>
+        <div class="code-block">
+            <code>
+<span class="comment"># Clone</span>
+<span class="cmd">git clone</span> https://github.com/scout-kit/fine-print.git
+<span class="cmd">cd</span> fine-print
+
+<span class="comment"># Install dependencies</span>
+<span class="cmd">make</span> deps
+
+<span class="comment"># Run in development mode</span>
+<span class="cmd">make</span> dev
+
+<span class="comment"># With HTTPS (for camera access on LAN)</span>
+<span class="cmd">FINEPRINT_TLS=1 FINEPRINT_PORT=8443 make</span> dev
+
+<span class="comment"># Build for production</span>
+<span class="cmd">make</span> all
+
+<span class="comment"># Cross-compile for Raspberry Pi</span>
+<span class="cmd">make</span> build-pi
+            </code>
+        </div>
+        <p style="text-align: center; color: var(--muted); font-size: 0.9rem;">
+            Open <code style="color: var(--accent);">http://localhost:8080</code> &mdash; default admin password: <code style="color: var(--accent);">changeme</code>
+        </p>
+    </section>
+
+    <section class="arch">
+        <h2>Built With</h2>
+        <p>Single binary. No external services. Pure Go image processing.</p>
+        <div class="tech-grid">
+            <div class="tech-card">
+                <h4>Go</h4>
+                <p>Backend, API, image pipeline</p>
+            </div>
+            <div class="tech-card">
+                <h4>SvelteKit</h4>
+                <p>Frontend SPA, embedded in binary</p>
+            </div>
+            <div class="tech-card">
+                <h4>Fabric.js</h4>
+                <p>Canvas editor, crop, overlays</p>
+            </div>
+            <div class="tech-card">
+                <h4>SQLite / MySQL</h4>
+                <p>Dual database support</p>
+            </div>
+            <div class="tech-card">
+                <h4>CUPS</h4>
+                <p>Printer integration</p>
+            </div>
+            <div class="tech-card">
+                <h4>miekg/dns</h4>
+                <p>Captive portal DNS hijack</p>
+            </div>
+        </div>
+    </section>
+</div>
+
+<footer>
+    <p>Apache License 2.0 &mdash; <a href="https://github.com/scout-kit/fine-print">scout-kit/fine-print</a></p>
+</footer>
+
+</body>
+</html>
