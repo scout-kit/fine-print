@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard — Fine Print</title>
+    <link rel="icon" type="image/png" href="app_logo.png">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="nav">
+    <div class="container nav-inner">
+        <a href="index.html" class="nav-brand"><img src="app_logo.png" alt="Fine Print" height="32"> Fine Print</a>
+        <div class="nav-links">
+            <a href="features.html">Features</a>
+            <a href="photo-booth.html">Photo Booth</a>
+            <a href="admin.html" class="active">Admin</a>
+            <a href="setup.html">Setup</a>
+            <a href="https://github.com/scout-kit/fine-print" class="nav-gh">GitHub</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <section class="page-hero">
+        <h1>Admin Dashboard</h1>
+        <p>Manage projects, review photos, monitor the print queue, and configure printers — all from any device.</p>
+    </section>
+
+    <section class="feature-detail">
+        <div class="feature-detail-text">
+            <h2>Dashboard Overview</h2>
+            <p>At a glance, see how many photos are pending review, in progress, printed, or have issues. Click any stat to jump to the relevant view.</p>
+            <ul>
+                <li><strong>Pending Review</strong> — uploaded photos awaiting approval</li>
+                <li><strong>In Progress</strong> — approved, queued, and currently printing</li>
+                <li><strong>Printed</strong> — successfully printed photos</li>
+                <li><strong>Issues</strong> — failed or rejected photos</li>
+            </ul>
+        </div>
+        <div class="feature-detail-visual">
+            <div class="placeholder-screen">
+                <div class="ph-bar"></div>
+                <div class="ph-nav"><span class="active">Dashboard</span><span>Photos</span><span>Queue</span><span>Projects</span><span>Settings</span></div>
+                <div class="ph-stats">
+                    <div class="ph-stat"><div class="ph-stat-num">5</div><div class="ph-stat-label">Pending</div></div>
+                    <div class="ph-stat"><div class="ph-stat-num">2</div><div class="ph-stat-label">In Progress</div></div>
+                    <div class="ph-stat"><div class="ph-stat-num">47</div><div class="ph-stat-label">Printed</div></div>
+                    <div class="ph-stat"><div class="ph-stat-num">1</div><div class="ph-stat-label red">Issues</div></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="feature-detail reverse">
+        <div class="feature-detail-text">
+            <h2>Project Management</h2>
+            <p>Create and manage multiple projects for different events or stations. Each project has its own template, visibility, and type.</p>
+            <ul>
+                <li>Standard or Photo Booth project types</li>
+                <li>Public, hidden (link-only), or private visibility</li>
+                <li>QR codes and share links per project</li>
+                <li>Copy projects with all settings and templates</li>
+                <li>Per-project photo, template, and settings tabs</li>
+            </ul>
+        </div>
+        <div class="feature-detail-visual">
+            <div class="placeholder-screen">
+                <div class="ph-bar"></div>
+                <div class="ph-list">
+                    <div class="ph-list-item"><span style="font-weight:600">Wedding Ceremony</span><span class="ph-badge green">Public</span></div>
+                    <div class="ph-list-item"><span style="font-weight:600">Reception Booth</span><span class="ph-badge green">Public</span><span class="ph-badge blue">Booth</span></div>
+                    <div class="ph-list-item"><span style="font-weight:600">VIP Photos</span><span class="ph-badge yellow">Hidden</span></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="feature-detail">
+        <div class="feature-detail-text">
+            <h2>Printer Configuration</h2>
+            <p>Detect and manage CUPS printers. No printers are enabled by default — the admin must explicitly enable each one.</p>
+            <ul>
+                <li>Detect printers from CUPS</li>
+                <li>Enable/disable individual printers</li>
+                <li>Round-robin or manual assignment mode</li>
+                <li>4x6 and postcard media sizes</li>
+                <li>Test print functionality</li>
+            </ul>
+        </div>
+        <div class="feature-detail-visual">
+            <div class="placeholder-screen">
+                <div class="ph-bar"></div>
+                <div class="ph-list">
+                    <div class="ph-list-item"><span>Canon_CP1500</span><span class="ph-badge green">Enabled</span></div>
+                    <div class="ph-list-item"><span>Canon_CP1300</span><span class="ph-badge">Disabled</span></div>
+                </div>
+                <div class="ph-controls" style="padding:12px">
+                    <div class="ph-btn small">Detect Printers</div>
+                    <div style="flex:1"></div>
+                    <span class="ph-meta">Mode: Round Robin</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="feature-detail reverse">
+        <div class="feature-detail-text">
+            <h2>Photo Review</h2>
+            <p>Click any photo to open the full modal — see the original, the print preview with template applied, and take action.</p>
+            <ul>
+                <li>Toggle between original and print preview</li>
+                <li>Approve, reject, edit, download, delete</li>
+                <li>Reprint with or without template re-render</li>
+                <li>Set copies per photo at approval time</li>
+                <li>Filter by status or project</li>
+            </ul>
+        </div>
+        <div class="feature-detail-visual">
+            <div class="placeholder-screen">
+                <div class="ph-modal">
+                    <div class="ph-modal-img"></div>
+                    <div class="ph-modal-toggle"><span class="active">Original</span><span>Print Preview</span></div>
+                    <div class="ph-btn-row" style="padding:12px">
+                        <div class="ph-btn small green">Approve</div>
+                        <div class="ph-btn small red">Reject</div>
+                        <div class="ph-btn small">Edit</div>
+                        <div class="ph-btn small">Download</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+
+<footer>
+    <p>Apache License 2.0 — <a href="https://github.com/scout-kit/fine-print">scout-kit/fine-print</a></p>
+</footer>
+
+</body>
+</html>

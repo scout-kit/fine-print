@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Features — Fine Print</title>
+    <link rel="icon" type="image/png" href="app_logo.png">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="nav">
+    <div class="container nav-inner">
+        <a href="index.html" class="nav-brand"><img src="app_logo.png" alt="Fine Print" height="32"> Fine Print</a>
+        <div class="nav-links">
+            <a href="features.html" class="active">Features</a>
+            <a href="photo-booth.html">Photo Booth</a>
+            <a href="admin.html">Admin</a>
+            <a href="setup.html">Setup</a>
+            <a href="https://github.com/scout-kit/fine-print" class="nav-gh">GitHub</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <section class="page-hero">
+        <h1>Features</h1>
+        <p>Everything you need for event photo printing, in a single offline app.</p>
+    </section>
+
+    <section class="feature-detail">
+        <div class="feature-detail-text">
+            <h2>Upload &amp; Edit</h2>
+            <p>Guests upload one or multiple photos from their phone. Each photo goes through a full editor with crop, rotate, brightness, contrast, and saturation controls.</p>
+            <ul>
+                <li>Multi-file upload with drag-and-drop</li>
+                <li>Auto-detect portrait vs landscape orientation</li>
+                <li>Persistent edit state — re-open and continue editing</li>
+                <li>Per-photo color adjustments override project defaults</li>
+                <li>Configurable print copies per photo</li>
+            </ul>
+        </div>
+        <div class="feature-detail-visual">
+            <div class="placeholder-screen">
+                <div class="ph-bar"></div>
+                <div class="ph-canvas"></div>
+                <div class="ph-tabs"><span class="active">Crop</span><span>Adjust</span></div>
+                <div class="ph-controls">
+                    <div class="ph-btn-row"><div class="ph-btn">Landscape</div><div class="ph-btn">Rotate</div><div class="ph-btn">Max</div></div>
+                </div>
+                <div class="ph-save"><div class="ph-btn primary wide">Save</div></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="feature-detail reverse">
+        <div class="feature-detail-text">
+            <h2>Project Templates</h2>
+            <p>Create projects with overlay images and text that automatically apply to every photo. Separate templates for landscape and portrait orientations.</p>
+            <ul>
+                <li>PNG overlay images with position, size, and opacity controls</li>
+                <li>Text overlays with font selection, size, color, and positioning</li>
+                <li>Landscape and portrait templates per project</li>
+                <li>Copy template between orientations with auto axis-swap</li>
+                <li>System fonts + uploaded custom fonts</li>
+                <li>Live canvas preview with drag positioning</li>
+            </ul>
+        </div>
+        <div class="feature-detail-visual">
+            <div class="placeholder-screen">
+                <div class="ph-bar"></div>
+                <div class="ph-tabs"><span class="active">Landscape</span><span>Portrait</span></div>
+                <div class="ph-canvas dark">
+                    <div class="ph-overlay-box"></div>
+                    <div class="ph-text-box">Event Name</div>
+                </div>
+                <div class="ph-list">
+                    <div class="ph-list-item"><span>watermark.png</span><span class="ph-meta">opacity: 0.80</span></div>
+                    <div class="ph-list-item"><span style="color:#4a9eff">"Event Name"</span><span class="ph-meta">25pt</span></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="feature-detail">
+        <div class="feature-detail-text">
+            <h2>Print Queue</h2>
+            <p>Full print queue management with CUPS integration. Support for multiple printers with round-robin or manual assignment.</p>
+            <ul>
+                <li>Admin approval workflow — review before printing</li>
+                <li>Inline copies adjustment at approval time</li>
+                <li>Pause, resume, retry, cancel individual jobs</li>
+                <li>Multi-printer with round-robin or manual mode</li>
+                <li>Auto-requeue on printer offline (no false failures)</li>
+                <li>Reprint with optional template re-render</li>
+            </ul>
+        </div>
+        <div class="feature-detail-visual">
+            <div class="placeholder-screen">
+                <div class="ph-bar"></div>
+                <div class="ph-tabs"><span class="active">Review (3)</span><span>Print Queue (1)</span></div>
+                <div class="ph-list">
+                    <div class="ph-list-item"><div class="ph-thumb"></div><span>#12</span><span class="ph-badge">queued</span><span class="ph-meta">Copies: 2</span></div>
+                    <div class="ph-list-item"><div class="ph-thumb"></div><span>#11</span><span class="ph-badge green">printing</span></div>
+                    <div class="ph-list-item"><div class="ph-thumb"></div><span>#10</span><span class="ph-badge red">failed</span><span class="ph-btn small">Retry</span></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="feature-detail reverse">
+        <div class="feature-detail-text">
+            <h2>Gallery &amp; Downloads</h2>
+            <p>Guests and admins can browse all event photos, view print previews, and download originals or rendered versions.</p>
+            <ul>
+                <li>Grid gallery showing all project photos</li>
+                <li>Click to open full photo modal with actions</li>
+                <li>Toggle between original and print preview</li>
+                <li>Download original or rendered print version</li>
+                <li>Edit any photo (guest or admin)</li>
+                <li>Real-time SSE updates across all views</li>
+            </ul>
+        </div>
+        <div class="feature-detail-visual">
+            <div class="placeholder-screen">
+                <div class="ph-bar"></div>
+                <div class="ph-grid">
+                    <div class="ph-grid-item"></div>
+                    <div class="ph-grid-item"></div>
+                    <div class="ph-grid-item"></div>
+                    <div class="ph-grid-item"></div>
+                    <div class="ph-grid-item"></div>
+                    <div class="ph-grid-item"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="feature-detail">
+        <div class="feature-detail-text">
+            <h2>Networking &amp; Security</h2>
+            <p>Built for offline events. Turn any machine into a self-contained photo kiosk with WiFi, captive portal, and HTTPS.</p>
+            <ul>
+                <li>WiFi hotspot creation (macOS Internet Sharing, Linux hostapd)</li>
+                <li>DNS hijack captive portal — works with iOS, Android, Windows</li>
+                <li>QR code fallback for devices that skip captive detection</li>
+                <li>Auto-generated self-signed TLS for camera access on LAN</li>
+                <li>HTTP→HTTPS redirect when TLS enabled</li>
+                <li>Project visibility: public, hidden (link-only), private (admin-only)</li>
+            </ul>
+        </div>
+        <div class="feature-detail-visual">
+            <div class="placeholder-screen">
+                <div class="ph-bar"></div>
+                <div class="ph-center">
+                    <div class="ph-qr"></div>
+                    <div class="ph-meta" style="margin-top:12px">Scan to connect</div>
+                    <div class="ph-url">https://192.168.69.1/p/a1b2c3</div>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+
+<footer>
+    <p>Apache License 2.0 — <a href="https://github.com/scout-kit/fine-print">scout-kit/fine-print</a></p>
+</footer>
+
+</body>
+</html>

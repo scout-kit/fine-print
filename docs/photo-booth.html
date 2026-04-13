@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Booth — Fine Print</title>
+    <link rel="icon" type="image/png" href="app_logo.png">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="nav">
+    <div class="container nav-inner">
+        <a href="index.html" class="nav-brand"><img src="app_logo.png" alt="Fine Print" height="32"> Fine Print</a>
+        <div class="nav-links">
+            <a href="features.html">Features</a>
+            <a href="photo-booth.html" class="active">Photo Booth</a>
+            <a href="admin.html">Admin</a>
+            <a href="setup.html">Setup</a>
+            <a href="https://github.com/scout-kit/fine-print" class="nav-gh">GitHub</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <section class="page-hero">
+        <h1>Photo Booth Mode</h1>
+        <p>Turn any device with a camera into a photo booth. Guests take photos, edit, and print — all from the browser.</p>
+    </section>
+
+    <section class="flow-section">
+        <h2>How It Works</h2>
+        <div class="flow-steps">
+            <div class="flow-step">
+                <div class="flow-num">1</div>
+                <h3>Scan QR Code</h3>
+                <p>Guest scans the QR code or connects to the WiFi. Booth projects auto-redirect to the camera UI.</p>
+            </div>
+            <div class="flow-arrow">&rarr;</div>
+            <div class="flow-step">
+                <div class="flow-num">2</div>
+                <h3>Take Photo</h3>
+                <p>Live camera viewfinder with optional countdown timer (3s or 5s). Front/back camera switch. Pinch to zoom.</p>
+            </div>
+            <div class="flow-arrow">&rarr;</div>
+            <div class="flow-step">
+                <div class="flow-num">3</div>
+                <h3>Edit</h3>
+                <p>Crop, rotate, adjust brightness/contrast. Template overlays and text are applied automatically.</p>
+            </div>
+            <div class="flow-arrow">&rarr;</div>
+            <div class="flow-step">
+                <div class="flow-num">4</div>
+                <h3>Print</h3>
+                <p>Preview the final render with all effects. Tap "Print" — skips admin review and sends straight to the printer.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="feature-detail">
+        <div class="feature-detail-text">
+            <h2>Camera Features</h2>
+            <ul>
+                <li>Live viewfinder using browser <code>getUserMedia</code> API</li>
+                <li>Front and rear camera switching</li>
+                <li>Pinch-to-zoom with hardware camera zoom</li>
+                <li>Tap-to-focus with visual indicator</li>
+                <li>Optional countdown timer (none / 3s / 5s)</li>
+                <li>Captured at full camera resolution</li>
+            </ul>
+        </div>
+        <div class="feature-detail-visual">
+            <div class="placeholder-screen booth-screen">
+                <div class="ph-camera-view"></div>
+                <div class="ph-booth-controls">
+                    <div class="ph-timer-select">3s</div>
+                    <div class="ph-capture-btn"></div>
+                    <div class="ph-flip-btn">&#x21bb;</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="feature-detail reverse">
+        <div class="feature-detail-text">
+            <h2>Instant Print</h2>
+            <p>Photo booth mode skips the admin approval queue. When the guest taps "Print", the photo is rendered with the project template and sent directly to the printer.</p>
+            <ul>
+                <li>No admin approval needed</li>
+                <li>Auto-render with project overlays and text</li>
+                <li>Respects configurable copies per photo</li>
+                <li>"Take Another" loops back to the camera</li>
+                <li>Retake deletes the discarded photo</li>
+            </ul>
+        </div>
+        <div class="feature-detail-visual">
+            <div class="placeholder-screen booth-screen">
+                <div class="ph-center">
+                    <div class="ph-check">&#10003;</div>
+                    <div style="font-size:1.2rem; font-weight:700; margin:12px 0;">Photo is printing!</div>
+                    <div class="ph-btn primary wide">Take Another Photo</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="callout">
+        <h2>Requires HTTPS</h2>
+        <p>Browser camera access requires a secure context. Fine Print auto-generates a self-signed TLS certificate on first run. Enable with <code>FINEPRINT_TLS=1</code> or <code>tls.enabled: true</code> in config.</p>
+    </section>
+</div>
+
+<footer>
+    <p>Apache License 2.0 — <a href="https://github.com/scout-kit/fine-print">scout-kit/fine-print</a></p>
+</footer>
+
+</body>
+</html>

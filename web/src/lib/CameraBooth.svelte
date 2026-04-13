@@ -523,11 +523,17 @@
 	.viewfinder-controls > * {
 		flex: 1;
 		display: flex;
-		justify-content: center;
+		align-items: center;
 	}
 
 	.viewfinder-controls > :first-child { justify-content: flex-start; }
+	.viewfinder-controls > :nth-child(2) { justify-content: center; }
 	.viewfinder-controls > :last-child { justify-content: flex-end; }
+
+	.viewfinder-controls .capture-btn,
+	.viewfinder-controls .booth-btn.secondary {
+		flex: none;
+	}
 
 	.capture-btn {
 		width: 68px; height: 68px;

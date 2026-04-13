@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup Guide — Fine Print</title>
+    <link rel="icon" type="image/png" href="app_logo.png">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="nav">
+    <div class="container nav-inner">
+        <a href="index.html" class="nav-brand"><img src="app_logo.png" alt="Fine Print" height="32"> Fine Print</a>
+        <div class="nav-links">
+            <a href="features.html">Features</a>
+            <a href="photo-booth.html">Photo Booth</a>
+            <a href="admin.html">Admin</a>
+            <a href="setup.html" class="active">Setup</a>
+            <a href="https://github.com/scout-kit/fine-print" class="nav-gh">GitHub</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <section class="page-hero">
+        <h1>Setup Guide</h1>
+        <p>Get Fine Print running in minutes.</p>
+    </section>
+
+    <section class="doc-section">
+        <h2>Prerequisites</h2>
+        <ul class="doc-list">
+            <li><strong>Go 1.22+</strong> — <a href="https://go.dev/dl/">go.dev/dl</a></li>
+            <li><strong>Node.js 20+</strong> — <a href="https://nodejs.org/">nodejs.org</a></li>
+            <li><strong>CUPS</strong> — Pre-installed on macOS. On Linux: <code>sudo apt install cups</code></li>
+        </ul>
+    </section>
+
+    <section class="doc-section">
+        <h2>Development</h2>
+        <div class="code-block">
+            <code>
+<span class="comment"># Clone the repo</span>
+git clone https://github.com/scout-kit/fine-print.git
+cd fine-print
+
+<span class="comment"># Install Go and Node dependencies</span>
+make deps
+
+<span class="comment"># Run in dev mode (port 8080, no hotspot)</span>
+make dev
+
+<span class="comment"># With HTTPS for camera access</span>
+FINEPRINT_TLS=1 FINEPRINT_PORT=8443 make dev
+            </code>
+        </div>
+    </section>
+
+    <section class="doc-section">
+        <h2>Production Build</h2>
+        <div class="code-block">
+            <code>
+<span class="comment"># Build frontend + Go binary</span>
+make all
+
+<span class="comment"># Output: bin/fine-print (single binary)</span>
+./bin/fine-print -config config.yml
+            </code>
+        </div>
+    </section>
+
+    <section class="doc-section">
+        <h2>Raspberry Pi</h2>
+        <div class="code-block">
+            <code>
+<span class="comment"># Cross-compile for ARM64</span>
+make build-pi
+
+<span class="comment"># Copy to Pi and run</span>
+scp bin/fine-print-linux-arm64 pi@raspberrypi:~/fine-print
+ssh pi@raspberrypi
+./fine-print -config config.yml
+            </code>
+        </div>
+    </section>
+
+    <section class="doc-section">
+        <h2>Service Installation</h2>
+        <p>Install as a system service that starts on boot:</p>
+        <div class="code-block">
+            <code>
+<span class="comment"># Build first</span>
+make all
+
+<span class="comment"># Install service (detects macOS/Linux)</span>
+sudo ./scripts/install-service.sh
+            </code>
+        </div>
+        <p>This installs the binary to <code>/usr/local/bin/fine-print</code>, creates config at <code>/etc/fine-print/config.yml</code>, and sets up launchd (macOS) or systemd (Linux).</p>
+    </section>
+
+    <section class="doc-section">
+        <h2>Configuration</h2>
+        <p>Copy the example config and customize:</p>
+        <div class="code-block">
+            <code>
+cp configs/fine-print.example.yml config.yml
+            </code>
+        </div>
+        <table class="config-table">
+            <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
+            <tr><td><code>server.port</code></td><td>80</td><td>HTTP port</td></tr>
+            <tr><td><code>database.driver</code></td><td>sqlite</td><td>sqlite or mysql</td></tr>
+            <tr><td><code>admin.password</code></td><td>changeme</td><td>Initial admin password</td></tr>
+            <tr><td><code>tls.enabled</code></td><td>false</td><td>Auto-generate HTTPS cert</td></tr>
+            <tr><td><code>printer.media</code></td><td>4x6</td><td>Print media size</td></tr>
+            <tr><td><code>hotspot.ssid</code></td><td>Fine Print</td><td>WiFi network name</td></tr>
+        </table>
+        <p style="margin-top:12px">Environment variables override config: <code>FINEPRINT_DEV=1</code>, <code>FINEPRINT_PORT=8080</code>, <code>FINEPRINT_TLS=1</code>, etc.</p>
+    </section>
+
+    <section class="doc-section">
+        <h2>First Run</h2>
+        <ol class="doc-list">
+            <li>Start the app and open it in a browser</li>
+            <li>Go to <code>/admin</code> and log in with the default password</li>
+            <li>Go to <strong>Settings</strong> — detect and enable a printer</li>
+            <li>Go to <strong>Projects</strong> — create a project (standard or photo booth)</li>
+            <li>Configure the project template (overlays, text, colors)</li>
+            <li>Share the project link or QR code with guests</li>
+        </ol>
+    </section>
+</div>
+
+<footer>
+    <p>Apache License 2.0 — <a href="https://github.com/scout-kit/fine-print">scout-kit/fine-print</a></p>
+</footer>
+
+</body>
+</html>
