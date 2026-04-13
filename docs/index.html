@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fine Print — Self-Hosted Photo Printing Kiosk</title>
+    <link rel="icon" type="image/png" href="app_logo.png">
     <style>
         :root {
             --bg: #0a0a0a;
@@ -37,14 +38,12 @@
             padding: 80px 0 60px;
         }
 
-        .hero h1 {
-            font-size: 3.5rem;
-            font-weight: 800;
-            letter-spacing: -0.03em;
-            margin-bottom: 16px;
+        .hero-logo {
+            max-width: 280px;
+            height: auto;
+            margin-bottom: 24px;
+            border-radius: 16px;
         }
-
-        .hero h1 span { color: var(--accent); }
 
         .hero p {
             font-size: 1.25rem;
@@ -206,7 +205,7 @@
 
 <div class="container">
     <section class="hero">
-        <h1>Fine <span>Print</span></h1>
+        <img src="app_logo.png" alt="Fine Print" class="hero-logo" />
         <p>Self-hosted photo printing kiosk. WiFi hotspot, photo editing, instant 4x6 prints — no internet required.</p>
         <div class="hero-buttons">
             <a href="https://github.com/scout-kit/fine-print" class="btn btn-primary">View on GitHub</a>

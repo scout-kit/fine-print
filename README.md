@@ -1,6 +1,16 @@
-# Fine Print
+<p align="center">
+  <img src="docs/app_logo.png" alt="Fine Print" width="300" />
+</p>
 
-Self-hosted photo printing kiosk. Turn any machine into a WiFi hotspot that lets guests upload, edit, and print 4x6 photos — no internet required.
+<p align="center">
+  Self-hosted photo printing kiosk. Turn any machine into a WiFi hotspot that lets guests upload, edit, and print 4x6 photos — no internet required.
+</p>
+
+<p align="center">
+  <a href="https://scout-kit.github.io/fine-print/">Website</a> · <a href="#quick-start">Quick Start</a> · <a href="#features">Features</a>
+</p>
+
+---
 
 ## Features
 
