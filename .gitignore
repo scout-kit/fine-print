@@ -1,0 +1,51 @@
+# Binary output
+bin/
+fine-print
+*.exe
+
+# Data directory (runtime data, uploads, DB, TLS certs)
+data/
+
+# TLS certificates (could end up outside data/)
+*.pem
+
+# Go build artifacts
+*.test
+*.prof
+*.out
+
+# Frontend build output (regenerated from source)
+web/build/
+web/node_modules/
+web/.svelte-kit/
+
+# Embedded frontend (compiled from web/build)
+# Only index.html placeholder is tracked for go:embed on fresh clone
+internal/frontend/build/_app/
+internal/frontend/build/*.html
+!internal/frontend/build/index.html
+internal/frontend/build/robots.txt
+
+# Config with real passwords
+config.yml
+*.local.yml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+.Spotlight-V100
+.Trashes
+
+# Environment
+.env
+.env.*
+
+# Claude Code
+.claude/

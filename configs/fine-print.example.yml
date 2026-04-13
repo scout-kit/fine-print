@@ -1,0 +1,46 @@
+server:
+  port: 80
+  host: "0.0.0.0"
+
+data_dir: "./data"
+
+database:
+  driver: "sqlite"             # "sqlite" or "mysql"
+  sqlite_path: "data/fine-print.db"
+  # mysql_dsn: "fineprint:password@tcp(127.0.0.1:3306)/fineprint?parseTime=true"
+
+hotspot:
+  enabled: true
+  ssid: "Fine Print"
+  password: ""                 # Empty = open network
+  interface: "en0"
+  subnet: "192.168.69.0/24"
+  gateway: "192.168.69.1"
+
+dns:
+  enabled: true
+  port: 53
+
+printer:
+  name: ""                     # CUPS printer name (must be configured by admin)
+  media: "4x6"
+  auto_queue: true             # Auto-queue on approval
+
+admin:
+  password: "changeme"         # Set on first run via setup wizard
+
+imaging:
+  max_upload_pixels: 6000      # Max dimension before pre-downscale
+  preview_max_width: 1200
+  print_width: 1800
+  print_height: 1200
+  jpeg_quality: 95
+
+tls:
+  enabled: false               # Enable HTTPS with auto-generated self-signed cert
+                               # Required for camera access on non-localhost
+                               # Set FINEPRINT_TLS=1 env var or true here
+
+dev:
+  mode: false
+  frontend_proxy: ""           # e.g., "http://localhost:5173"
