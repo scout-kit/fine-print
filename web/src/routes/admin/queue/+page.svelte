@@ -2,15 +2,16 @@
 	import { onMount, onDestroy } from 'svelte';
 	import PhotoModal from '$lib/PhotoModal.svelte';
 	import {
-		listPhotos, listQueue, approvePhoto, rejectPhoto,
+		listPhotos, listProjects, listQueue, approvePhoto, rejectPhoto,
 		pauseQueue, resumeQueue, retryJob, cancelJob,
 		previewUrl, renderPreviewUrl, photoStatusName, jobStatusName,
-		type Photo, type QueueResponse, type PrintJob
+		type Photo, type Project, type QueueResponse, type PrintJob
 	} from '$lib/api';
 	import { createSSE, type SSEConnection } from '$lib/sse';
 
 	let pendingPhotos: Photo[] = $state([]); // uploaded — for review tab
 	let allPhotos: Photo[] = $state([]);    // all — for queue job matching
+	let projects: Project[] = $state([]);
 	let queue: QueueResponse | null = $state(null);
 	let activeTab = $state<'review' | 'queue'>('review');
 	let loading = $state(false);
@@ -24,10 +25,11 @@
 		if (loading) return;
 		loading = true;
 		try {
-			[pendingPhotos, allPhotos, queue] = await Promise.all([
+			[pendingPhotos, allPhotos, queue, projects] = await Promise.all([
 				listPhotos('uploaded'),
 				listPhotos(),
-				listQueue()
+				listQueue(),
+				listProjects()
 			]);
 			// Initialize copies from photo data
 			for (const p of pendingPhotos) {
@@ -59,6 +61,11 @@
 
 	function getPhotoForJob(job: PrintJob): Photo | undefined {
 		return allPhotos.find(p => p.id === job.photo_id);
+	}
+
+	function getProjectName(projectId: number | undefined): string {
+		if (!projectId) return '';
+		return projects.find(p => p.id === projectId)?.name || '';
 	}
 
 	async function handleApprove(id: number) {
@@ -127,7 +134,9 @@
 						{/if}
 					</button>
 					<div class="review-info">
-						<span class="review-id">#{photo.id}</span>
+						{#if getProjectName(photo.project_id)}
+							<span class="project-tag">{getProjectName(photo.project_id)}</span>
+						{/if}
 						<label class="copies-inline">
 							<span>Copies</span>
 							<input type="number" min="1" max="99"
@@ -173,6 +182,9 @@
 					</button>
 					<div class="job-info">
 						<span class="badge {jobStatusName(job.status_id)}">{jobStatusName(job.status_id)}</span>
+						{#if getProjectName(photo?.project_id)}
+							<span class="project-tag">{getProjectName(photo?.project_id)}</span>
+						{/if}
 						{#if job.printer_name}
 							<span class="job-meta">{job.printer_name}</span>
 						{/if}
@@ -199,6 +211,7 @@
 		photo={selectedPhoto}
 		onClose={() => selectedPhoto = null}
 		onAction={load}
+		projectName={getProjectName(selectedPhoto?.project_id)}
 	/>
 {/if}
 
@@ -267,6 +280,8 @@
 	.job-meta { font-size: 0.75rem; color: var(--text-muted); }
 	.job-error { font-size: 0.75rem; color: var(--danger); width: 100%; }
 	.job-btns { display: flex; gap: 4px; flex-shrink: 0; }
+
+	.project-tag { font-size: 0.7rem; color: var(--accent); font-weight: 500; }
 
 	.sm { padding: 4px 10px; font-size: 0.75rem; min-height: auto; min-width: auto; }
 

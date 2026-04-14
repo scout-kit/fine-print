@@ -82,7 +82,7 @@ func (q *Queries) GetProject(ctx context.Context, id uint64) (*Project, error) {
 }
 
 func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
-	var projects []Project
+	projects := make([]Project, 0)
 	err := q.db.SelectContext(ctx, &projects, "SELECT * FROM projects ORDER BY created_at DESC")
 	return projects, err
 }
@@ -107,7 +107,7 @@ func (q *Queries) GetProjectBySlug(ctx context.Context, slug string) (*Project, 
 
 // ListPublicProjects returns only public projects.
 func (q *Queries) ListPublicProjects(ctx context.Context) ([]Project, error) {
-	var projects []Project
+	projects := make([]Project, 0)
 	err := q.db.SelectContext(ctx, &projects,
 		"SELECT * FROM projects WHERE visibility_id = ? ORDER BY created_at DESC",
 		VisibilityPublic)
@@ -148,21 +148,21 @@ func (q *Queries) GetPhoto(ctx context.Context, id uint64) (*Photo, error) {
 }
 
 func (q *Queries) ListPhotosByStatus(ctx context.Context, statusID uint) ([]Photo, error) {
-	var photos []Photo
+	photos := make([]Photo, 0)
 	err := q.db.SelectContext(ctx, &photos,
 		"SELECT * FROM photos WHERE status_id = ? ORDER BY created_at ASC", statusID)
 	return photos, err
 }
 
 func (q *Queries) ListPhotosBySession(ctx context.Context, sessionID string) ([]Photo, error) {
-	var photos []Photo
+	photos := make([]Photo, 0)
 	err := q.db.SelectContext(ctx, &photos,
 		"SELECT * FROM photos WHERE session_id = ? ORDER BY created_at DESC", sessionID)
 	return photos, err
 }
 
 func (q *Queries) ListPhotosByProject(ctx context.Context, projectID uint64) ([]Photo, error) {
-	var photos []Photo
+	photos := make([]Photo, 0)
 	err := q.db.SelectContext(ctx, &photos,
 		"SELECT * FROM photos WHERE project_id = ? ORDER BY created_at ASC", projectID)
 	return photos, err
@@ -214,7 +214,7 @@ func (q *Queries) UpdatePhotoCopies(ctx context.Context, id uint64, copies int) 
 // ListRenderedPhotosByProject returns photos that have a rendered_key set and are not printed.
 // Used for file cleanup when invalidating project renders.
 func (q *Queries) ListRenderedPhotosByProject(ctx context.Context, projectID uint64) ([]Photo, error) {
-	var photos []Photo
+	photos := make([]Photo, 0)
 	err := q.db.SelectContext(ctx, &photos,
 		`SELECT * FROM photos WHERE project_id = ? AND status_id != ? AND rendered_key IS NOT NULL`,
 		projectID, PhotoStatusPrinted)
@@ -361,7 +361,7 @@ func (q *Queries) GetNextQueuedJob(ctx context.Context) (*PrintJob, error) {
 }
 
 func (q *Queries) ListPrintJobs(ctx context.Context) ([]PrintJob, error) {
-	var jobs []PrintJob
+	jobs := make([]PrintJob, 0)
 	err := q.db.SelectContext(ctx, &jobs,
 		"SELECT * FROM print_jobs WHERE status_id NOT IN (?, ?) ORDER BY position ASC",
 		PrintJobStatusCanceled, PrintJobStatusPrinted)
@@ -444,14 +444,14 @@ func (q *Queries) GetOverlay(ctx context.Context, id uint64) (*Overlay, error) {
 }
 
 func (q *Queries) ListOverlaysByProject(ctx context.Context, projectID uint64) ([]Overlay, error) {
-	var overlays []Overlay
+	overlays := make([]Overlay, 0)
 	err := q.db.SelectContext(ctx, &overlays,
 		"SELECT * FROM overlays WHERE project_id = ? ORDER BY z_order ASC", projectID)
 	return overlays, err
 }
 
 func (q *Queries) ListOverlaysByProjectOrientation(ctx context.Context, projectID uint64, orientationID uint) ([]Overlay, error) {
-	var overlays []Overlay
+	overlays := make([]Overlay, 0)
 	err := q.db.SelectContext(ctx, &overlays,
 		"SELECT * FROM overlays WHERE project_id = ? AND orientation_id = ? ORDER BY z_order ASC",
 		projectID, orientationID)
@@ -507,14 +507,14 @@ func (q *Queries) GetTextOverlay(ctx context.Context, id uint64) (*TextOverlay, 
 }
 
 func (q *Queries) ListTextOverlaysByProject(ctx context.Context, projectID uint64) ([]TextOverlay, error) {
-	var overlays []TextOverlay
+	overlays := make([]TextOverlay, 0)
 	err := q.db.SelectContext(ctx, &overlays,
 		"SELECT * FROM text_overlays WHERE project_id = ? ORDER BY z_order ASC", projectID)
 	return overlays, err
 }
 
 func (q *Queries) ListTextOverlaysByProjectOrientation(ctx context.Context, projectID uint64, orientationID uint) ([]TextOverlay, error) {
-	var overlays []TextOverlay
+	overlays := make([]TextOverlay, 0)
 	err := q.db.SelectContext(ctx, &overlays,
 		"SELECT * FROM text_overlays WHERE project_id = ? AND orientation_id = ? ORDER BY z_order ASC",
 		projectID, orientationID)
@@ -592,7 +592,7 @@ func (q *Queries) CreateFont(ctx context.Context, f *Font) error {
 }
 
 func (q *Queries) ListFonts(ctx context.Context) ([]Font, error) {
-	var fonts []Font
+	fonts := make([]Font, 0)
 	err := q.db.SelectContext(ctx, &fonts, "SELECT * FROM fonts ORDER BY name ASC")
 	return fonts, err
 }
@@ -652,14 +652,14 @@ func (q *Queries) UpsertPrinterAssignment(ctx context.Context, name string, enab
 }
 
 func (q *Queries) ListPrinterAssignments(ctx context.Context) ([]PrinterAssignment, error) {
-	var printers []PrinterAssignment
+	printers := make([]PrinterAssignment, 0)
 	err := q.db.SelectContext(ctx, &printers,
 		"SELECT * FROM printer_assignments ORDER BY name ASC")
 	return printers, err
 }
 
 func (q *Queries) GetEnabledPrinters(ctx context.Context) ([]PrinterAssignment, error) {
-	var printers []PrinterAssignment
+	printers := make([]PrinterAssignment, 0)
 	err := q.db.SelectContext(ctx, &printers,
 		"SELECT * FROM printer_assignments WHERE enabled = 1 ORDER BY name ASC")
 	return printers, err
@@ -693,7 +693,7 @@ func (q *Queries) GetNextQueuedJobForPrinter(ctx context.Context, printerName st
 
 // Gallery: list all photos for a project with status names
 func (q *Queries) ListGalleryPhotos(ctx context.Context, projectID uint64) ([]Photo, error) {
-	var photos []Photo
+	photos := make([]Photo, 0)
 	err := q.db.SelectContext(ctx, &photos,
 		"SELECT * FROM photos WHERE project_id = ? AND status_id != ? ORDER BY created_at DESC",
 		projectID, PhotoStatusRejected)
@@ -701,7 +701,7 @@ func (q *Queries) ListGalleryPhotos(ctx context.Context, projectID uint64) ([]Ph
 }
 
 func (q *Queries) ListAllGalleryPhotos(ctx context.Context) ([]Photo, error) {
-	var photos []Photo
+	photos := make([]Photo, 0)
 	err := q.db.SelectContext(ctx, &photos,
 		"SELECT * FROM photos WHERE status_id != ? ORDER BY created_at DESC",
 		PhotoStatusRejected)
@@ -709,7 +709,7 @@ func (q *Queries) ListAllGalleryPhotos(ctx context.Context) ([]Photo, error) {
 }
 
 func (q *Queries) ListAllPhotos(ctx context.Context) ([]Photo, error) {
-	var photos []Photo
+	photos := make([]Photo, 0)
 	err := q.db.SelectContext(ctx, &photos,
 		"SELECT * FROM photos ORDER BY created_at ASC")
 	return photos, err

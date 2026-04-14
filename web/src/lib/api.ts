@@ -301,6 +301,7 @@ export interface Photo {
 	session_id: string;
 	status_id: number;
 	preview_key: string | null;
+	copies: number;
 	created_at: string;
 }
 
@@ -377,6 +378,7 @@ export interface PrintJob {
 	photo_id: number;
 	status_id: number;
 	position: number;
+	printer_name: string | null;
 	error_msg: string | null;
 	attempts: number;
 }

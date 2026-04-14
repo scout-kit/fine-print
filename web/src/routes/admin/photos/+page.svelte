@@ -68,6 +68,7 @@
 		photo={selectedPhoto}
 		onClose={() => selectedPhoto = null}
 		onAction={load}
+		projectName={projectName(selectedPhoto.project_id)}
 	/>
 {/if}
 

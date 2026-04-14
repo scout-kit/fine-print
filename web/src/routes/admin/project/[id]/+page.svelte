@@ -70,6 +70,7 @@
 		photo={selectedPhoto}
 		onClose={() => selectedPhoto = null}
 		onAction={load}
+		projectName={projectName}
 	/>
 {/if}
 

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { isAdmin } from '$lib/stores';
-	import { adminLogin, listPhotos, listQueue, type Photo, type QueueResponse } from '$lib/api';
+	import { adminLogin, listPhotos, listProjects, listQueue, type Photo, type Project, type QueueResponse } from '$lib/api';
 	import PhotoThumb from '$lib/PhotoThumb.svelte';
 	import PhotoModal from '$lib/PhotoModal.svelte';
 	import { createSSE, type SSEConnection } from '$lib/sse';
@@ -16,6 +16,7 @@
 
 	// Dashboard state
 	let photos: Photo[] = $state([]);
+	let projects: Project[] = $state([]);
 	let queue: QueueResponse | null = $state(null);
 	let selectedPhoto: Photo | null = $state(null);
 	let sseConn: SSEConnection | null = null;
@@ -39,9 +40,10 @@
 		if (loading) return;
 		loading = true;
 		try {
-			[photos, queue] = await Promise.all([
+			[photos, queue, projects] = await Promise.all([
 				listPhotos(),
-				listQueue()
+				listQueue(),
+				listProjects()
 			]);
 		} catch {
 			// Ignore
@@ -82,6 +84,11 @@
 	let inProgressCount = $derived(photos.filter(p => p.status_id >= 2 && p.status_id <= 4).length); // approved + queued + printing
 	let printedCount = $derived(photos.filter(p => p.status_id === 5).length);
 	let issuesCount = $derived(photos.filter(p => p.status_id === 6).length); // failed only
+
+	function getProjectName(projectId: number | undefined): string {
+		if (!projectId) return '';
+		return projects.find(p => p.id === projectId)?.name || '';
+	}
 </script>
 
 {#if !authenticated}
@@ -148,6 +155,7 @@
 			photo={selectedPhoto}
 			onClose={() => selectedPhoto = null}
 			onAction={refreshData}
+			projectName={getProjectName(selectedPhoto?.project_id)}
 		/>
 	{/if}
 {/if}

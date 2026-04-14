@@ -8,6 +8,7 @@
 	// Accepts any object with these fields — works with Photo and GalleryPhoto
 	interface ModalPhoto {
 		id: number;
+		project_id?: number;
 		status_id: number;
 		session_id?: string;
 		preview_key?: string | null;
@@ -21,9 +22,11 @@
 		onClose: () => void;
 		onAction: () => void;
 		guestSession?: string;
+		projectName?: string;
 	}
 
-	let { photo, onClose, onAction, guestSession = '' }: Props = $props();
+	let { photo, onClose, onAction, guestSession = '', projectName = '' }: Props = $props();
+	let showMore = $state(false);
 
 	let admin = $state(false);
 	isAdmin.subscribe(v => admin = v);
@@ -75,11 +78,13 @@
 		<!-- Info bar -->
 		<div class="info-bar">
 			<span class="badge {status}">{status}</span>
-			<span class="meta">#{photo.id}</span>
-			{#if (photo.copies || 1) > 1}
-				<span class="meta copies-badge">{photo.copies} copies</span>
+			{#if projectName}
+				<span class="meta project-name">{projectName}</span>
 			{/if}
-			<span class="meta">{new Date(photo.created_at).toLocaleString()}</span>
+			{#if (photo.copies || 1) > 1}
+				<span class="meta copies-badge">{photo.copies}x</span>
+			{/if}
+			<span class="meta" style="margin-left:auto">{new Date(photo.created_at).toLocaleTimeString()}</span>
 		</div>
 
 		<!-- Image toggle -->
@@ -98,35 +103,47 @@
 
 		<!-- Actions -->
 		<div class="actions">
-			{#if admin}
-				{#if photo.status_id === 1}
-					<button class="success action-btn" onclick={handleApprove} disabled={acting}>Approve</button>
-					<button class="danger action-btn" onclick={handleReject} disabled={acting}>Reject</button>
+			<div class="actions-primary">
+				{#if admin && photo.status_id === 1}
+					<button class="act-btn approve" onclick={handleApprove} disabled={acting}>
+						<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+						Approve
+					</button>
+					<button class="act-btn reject" onclick={handleReject} disabled={acting}>
+						<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+						Reject
+					</button>
 				{/if}
 
-				{#if photo.status_id === 2 || photo.status_id === 7}
-					<button class="ghost action-btn" onclick={() => act(() => unapprovePhoto(photo.id))} disabled={acting}>Unapprove</button>
-				{/if}
+				<a href="/edit?id={photo.id}" class="act-btn">
+					<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+					Edit
+				</a>
 
-				<a href="/edit?id={photo.id}" class="ghost action-btn">Edit</a>
-				<a href={downloadOriginalUrl(photo.id)} class="ghost action-btn" download>Download Original</a>
-				<a href={renderPreviewUrl(photo.id)} class="ghost action-btn" download="print_{photo.id}.jpg">Download Print</a>
+				<button class="act-btn" onclick={() => showMore = !showMore}>
+					<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+					More
+				</button>
+			</div>
 
-				{#if photo.status_id === 5 || photo.status_id === 6}
-					<button class="ghost action-btn" onclick={() => act(() => reprintPhoto(photo.id, false))} disabled={acting}>Reprint</button>
-					<button class="ghost action-btn" onclick={() => act(() => reprintPhoto(photo.id, true))} disabled={acting}>Reprint (fresh)</button>
-				{/if}
+			{#if showMore}
+				<div class="actions-more">
+					<a href={downloadOriginalUrl(photo.id)} class="more-item" download>Download Original</a>
+					<a href={renderPreviewUrl(photo.id)} class="more-item" download="print_{photo.id}.jpg">Download Print</a>
 
-				<button class="ghost action-btn danger-text" onclick={handleDelete} disabled={acting}>Delete</button>
+					{#if admin && (photo.status_id === 2 || photo.status_id === 7)}
+						<button class="more-item" onclick={() => act(() => unapprovePhoto(photo.id))} disabled={acting}>Unapprove</button>
+					{/if}
 
-			{:else}
-				<a href="/edit?id={photo.id}" class="ghost action-btn">Edit</a>
-				<a href={downloadOriginalUrl(photo.id)} class="ghost action-btn" download>Download Original</a>
-				<a href={renderPreviewUrl(photo.id)} class="ghost action-btn" download="print_{photo.id}.jpg">Download Print</a>
+					{#if admin && (photo.status_id === 5 || photo.status_id === 6)}
+						<button class="more-item" onclick={() => act(() => reprintPhoto(photo.id, false))} disabled={acting}>Reprint</button>
+						<button class="more-item" onclick={() => act(() => reprintPhoto(photo.id, true))} disabled={acting}>Reprint (fresh render)</button>
+					{/if}
 
-				{#if isOwn && photo.status_id !== 4}
-					<button class="ghost action-btn danger-text" onclick={handleDelete} disabled={acting}>Delete</button>
-				{/if}
+					{#if admin || (isOwn && photo.status_id !== 4)}
+						<button class="more-item danger-text" onclick={handleDelete} disabled={acting}>Delete</button>
+					{/if}
+				</div>
 			{/if}
 		</div>
 	</div>
@@ -252,27 +269,63 @@
 	}
 
 	.actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 8px;
-		padding: 12px 16px;
+		padding: 0;
 	}
 
-	.action-btn {
-		padding: 8px 16px;
-		font-size: 0.85rem;
-		border-radius: var(--radius-sm);
-		text-decoration: none;
-		text-align: center;
-		font-weight: 500;
-		min-height: 38px;
+	.actions-primary {
+		display: flex;
+		gap: 6px;
+		padding: 10px 16px;
+	}
+
+	.act-btn {
 		display: inline-flex;
 		align-items: center;
+		gap: 5px;
+		padding: 7px 14px;
+		font-size: 0.8rem;
+		font-weight: 600;
+		border-radius: 8px;
+		border: 1px solid var(--border);
+		background: transparent;
+		color: var(--text-muted);
+		text-decoration: none;
+		cursor: pointer;
+		min-height: auto;
+		min-width: auto;
+		white-space: nowrap;
 	}
 
-	a.action-btn {
-		border: 1px solid var(--border);
+	.act-btn:hover { border-color: var(--accent); color: var(--text); }
+	.act-btn.approve { background: var(--success); color: #000; border-color: var(--success); }
+	.act-btn.approve:hover { opacity: 0.85; }
+	.act-btn.reject { background: var(--danger); color: white; border-color: var(--danger); }
+	.act-btn.reject:hover { opacity: 0.85; }
+
+	.actions-more {
+		border-top: 1px solid var(--border);
+		padding: 6px 0;
+	}
+
+	.more-item {
+		display: block;
+		width: 100%;
+		padding: 8px 16px;
+		font-size: 0.8rem;
 		color: var(--text-muted);
+		background: none;
+		border: none;
+		text-align: left;
+		cursor: pointer;
+		text-decoration: none;
+		font-family: inherit;
+	}
+
+	.more-item:hover { background: var(--bg-elevated); color: var(--text); }
+
+	.project-name {
+		font-weight: 500;
+		color: var(--accent);
 	}
 
 	.danger-text { color: var(--danger); }
