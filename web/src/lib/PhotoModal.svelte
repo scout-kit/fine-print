@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { afterNavigate } from '$app/navigation';
 	import {
 		previewUrl, downloadOriginalUrl, downloadRenderedUrl, renderPreviewUrl,
 		photoStatusName, approvePhoto, rejectPhoto, unapprovePhoto, deletePhoto, reprintPhoto
@@ -33,6 +34,10 @@
 
 	let showRendered = $state(true); // default to print preview
 	let acting = $state(false);
+	let renderTs = $state(Date.now());
+
+	// Refresh render timestamp when navigating back (e.g. after editing)
+	afterNavigate(() => { renderTs = Date.now(); });
 
 	const status = $derived(photoStatusName(photo.status_id));
 	const isOwn = $derived(guestSession !== '' && photo.session_id === guestSession);
@@ -65,7 +70,7 @@
 		<!-- Image -->
 		<div class="image-area">
 			{#if showRendered}
-				<img src={renderPreviewUrl(photo.id) + '?t=' + Date.now()} alt="Print Preview" />
+				<img src={renderPreviewUrl(photo.id) + '?t=' + renderTs} alt="Print Preview" />
 				<span class="image-label">Print Preview</span>
 			{:else if hasPreview}
 				<img src={previewUrl(photo.id)} alt="Original" />
