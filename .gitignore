@@ -1,6 +1,6 @@
 # Binary output
 bin/
-fine-print
+/fine-print
 *.exe
 
 # Data directory (runtime data, uploads, DB, TLS certs)
