@@ -134,8 +134,14 @@ func (q *QueueManager) tryAssignJob(ctx context.Context) bool {
 		q.mu.Unlock()
 	}
 
-	// Assign printer to job
+	// Assign printer and mark as printing before spawning goroutine
+	// to prevent the main loop from picking up the same job again
 	q.queries.UpdatePrintJobPrinter(ctx, job.ID, printerName)
+	q.queries.UpdatePrintJobStatus(ctx, job.ID, db.PrintJobStatusPrinting, "", "")
+
+	q.mu.Lock()
+	q.active[printerName] = job
+	q.mu.Unlock()
 
 	// Process in a goroutine (allows concurrent printing on multiple printers)
 	go q.processJob(ctx, job, printerName)
@@ -162,15 +168,18 @@ func (q *QueueManager) tryAssignJobLegacy(ctx context.Context) bool {
 		return false
 	}
 
+	q.queries.UpdatePrintJobStatus(ctx, job.ID, db.PrintJobStatusPrinting, "", "")
+
+	q.mu.Lock()
+	q.active[printerName] = job
+	q.mu.Unlock()
+
 	go q.processJob(ctx, job, printerName)
 	return true
 }
 
 func (q *QueueManager) processJob(ctx context.Context, job *db.PrintJob, printerName string) {
-	q.mu.Lock()
-	q.active[printerName] = job
-	q.mu.Unlock()
-
+	// active map is set by caller (tryAssignJob) before spawning this goroutine
 	defer func() {
 		q.mu.Lock()
 		delete(q.active, printerName)
@@ -186,12 +195,6 @@ func (q *QueueManager) processJob(ctx context.Context, job *db.PrintJob, printer
 
 	if !photo.RenderedKey.Valid {
 		q.failJob(ctx, job, "photo has no rendered image")
-		return
-	}
-
-	// Update status to printing
-	if err := q.queries.UpdatePrintJobStatus(ctx, job.ID, db.PrintJobStatusPrinting, "", ""); err != nil {
-		log.Printf("Error updating job status: %v", err)
 		return
 	}
 

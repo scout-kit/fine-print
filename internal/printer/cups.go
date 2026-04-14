@@ -91,50 +91,26 @@ func (c *CUPSPrinter) Print(printerName, filePath string, opts PrintOptions) (st
 }
 
 func (c *CUPSPrinter) JobStatus(jobID string) (string, error) {
-	// Extract the numeric part from "PrinterName-NNN" for lpstat queries
-	numericID := jobID
-	if idx := strings.LastIndex(jobID, "-"); idx >= 0 {
-		numericID = jobID[idx+1:]
-	}
-
-	// Use lpstat -W all to list all jobs, then find ours
-	out, err := exec.Command("lpstat", "-W", "all").CombinedOutput()
+	// List only active (not-completed) jobs. Once a job finishes,
+	// it disappears from this list — no need to parse status keywords.
+	out, err := exec.Command("lpstat", "-W", "not-completed").CombinedOutput()
 	if err != nil {
-		// If lpstat fails entirely, assume completed (job already processed)
+		// lpstat failing likely means no active jobs
 		return "completed", nil
 	}
 
 	outStr := strings.TrimSpace(string(out))
 	if outStr == "" {
+		// No active jobs at all
 		return "completed", nil
 	}
 
-	// Find the line matching our job ID
-	for _, line := range strings.Split(outStr, "\n") {
-		// Lines look like: "Canon_SELPHY_CP1500-282 user 1024 Mon 14 Apr 2026 10:30:00"
-		if !strings.Contains(line, jobID) && !strings.Contains(line, "-"+numericID+" ") {
-			continue
-		}
-
-		lower := strings.ToLower(line)
-		switch {
-		case strings.Contains(lower, "completed"):
-			return "completed", nil
-		case strings.Contains(lower, "processing"):
-			return "processing", nil
-		case strings.Contains(lower, "stopped"):
-			return "stopped", nil
-		case strings.Contains(lower, "canceled"):
-			return "canceled", nil
-		case strings.Contains(lower, "aborted"):
-			return "aborted", nil
-		default:
-			// Job exists in output but no specific status keyword — it's pending/queued
-			return "pending", nil
-		}
+	// Check if our job is still in the active list
+	if strings.Contains(outStr, jobID) {
+		return "processing", nil
 	}
 
-	// Job not found in any list — it completed and was removed
+	// Job not in active list — it's done
 	return "completed", nil
 }
 
