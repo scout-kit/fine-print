@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { previewUrl, photoStatusName } from '$lib/api';
+	import { renderPreviewUrl, previewUrl, photoStatusName } from '$lib/api';
 
 	interface ThumbPhoto {
 		id: number;
@@ -24,7 +24,7 @@
 <button class="thumb" class:selected={selectable && selected} {onclick}>
 	<div class="image">
 		{#if hasPreview}
-			<img src={previewUrl(photo.id)} alt="Photo {photo.id}" loading="lazy" />
+			<img src={renderPreviewUrl(photo.id)} alt="Photo {photo.id}" loading="lazy" />
 		{:else}
 			<div class="no-preview">Processing</div>
 		{/if}
