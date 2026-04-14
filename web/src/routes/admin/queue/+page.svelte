@@ -20,6 +20,7 @@
 
 	// Per-photo copies for inline editing on approval
 	let copiesMap = $state<Record<number, number>>({});
+	let cacheBust = $state(Date.now());
 
 	async function load() {
 		if (loading) return;
@@ -38,6 +39,7 @@
 				}
 			}
 		} catch { /* ignore */ }
+		cacheBust = Date.now();
 		loading = false;
 	}
 
@@ -128,7 +130,7 @@
 				<div class="review-row card">
 					<button class="row-thumb" onclick={() => selectedPhoto = photo}>
 						{#if photo.preview_key}
-							<img src={renderPreviewUrl(photo.id)} alt="Photo {photo.id}" />
+							<img src={renderPreviewUrl(photo.id) + '?t=' + cacheBust} alt="Photo {photo.id}" />
 						{:else}
 							<div class="no-preview">Processing</div>
 						{/if}
@@ -175,7 +177,7 @@
 				<div class="job-row card">
 					<button class="job-thumb" onclick={() => { if (photo) selectedPhoto = photo; }}>
 						{#if photo}
-							<img src={renderPreviewUrl(photo.id)} alt="Job {job.id}" />
+							<img src={renderPreviewUrl(photo.id) + '?t=' + cacheBust} alt="Job {job.id}" />
 						{:else}
 							<div class="no-preview">#{job.photo_id}</div>
 						{/if}

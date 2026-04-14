@@ -27,7 +27,7 @@ func (h *Handlers) RenderPreview(w http.ResponseWriter, r *http.Request) {
 	// If already rendered, serve it
 	if photo.RenderedKey.Valid {
 		filePath := h.store.Path(storage.BucketRendered, photo.RenderedKey.String)
-		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Cache-Control", "no-store")
 		http.ServeFile(w, r, filePath)
 		return
 	}
@@ -160,6 +160,6 @@ func (h *Handlers) RenderPreview(w http.ResponseWriter, r *http.Request) {
 	h.queries.UpdatePhotoRendered(r.Context(), photo.ID, renderedKey)
 
 	// Serve the rendered file
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-store")
 	http.ServeFile(w, r, renderedPath)
 }

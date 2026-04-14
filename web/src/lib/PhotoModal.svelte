@@ -65,7 +65,7 @@
 		<!-- Image -->
 		<div class="image-area">
 			{#if showRendered}
-				<img src={renderPreviewUrl(photo.id)} alt="Print Preview" />
+				<img src={renderPreviewUrl(photo.id) + '?t=' + Date.now()} alt="Print Preview" />
 				<span class="image-label">Print Preview</span>
 			{:else if hasPreview}
 				<img src={previewUrl(photo.id)} alt="Original" />
