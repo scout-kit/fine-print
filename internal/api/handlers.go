@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"strconv"
 
 	"github.com/scout-kit/fine-print/internal/config"
@@ -57,6 +58,16 @@ func parseID(r *http.Request, param string) (uint64, error) {
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
+	// Prevent nil slices from serializing as "null" — return "[]" instead
+	if data != nil {
+		v := reflect.ValueOf(data)
+		if v.Kind() == reflect.Slice && v.IsNil() {
+			w.Write([]byte("[]\n"))
+			return
+		}
+	}
+
 	json.NewEncoder(w).Encode(data)
 }
 

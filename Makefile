@@ -1,7 +1,7 @@
 .PHONY: build dev frontend backend clean test
 
 # Default target
-build: backend
+build: backend frontend
 
 # Build frontend (requires Node.js), copy to embed location
 frontend:

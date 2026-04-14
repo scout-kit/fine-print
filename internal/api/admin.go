@@ -354,6 +354,22 @@ func (h *Handlers) RejectPhoto(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "rejected"})
 }
 
+// UnapprovePhoto resets a photo back to uploaded status so it can be re-reviewed.
+func (h *Handlers) UnapprovePhoto(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid photo id")
+		return
+	}
+
+	if err := h.queries.UpdatePhotoStatus(r.Context(), id, db.PhotoStatusUploaded); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to unapprove photo")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "uploaded"})
+}
+
 // OverridePhoto saves per-image template overrides.
 func (h *Handlers) OverridePhoto(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
@@ -496,14 +512,13 @@ func (h *Handlers) CancelJob(w http.ResponseWriter, r *http.Request) {
 }
 
 // revertPhotoStatusIfNoActiveJobs checks if a photo has any remaining active
-// (queued/printing) jobs. If not, sets the photo to approved (not uploaded,
-// so it doesn't re-appear in the review queue).
+// (queued/printing) jobs. If not, reverts to uploaded so it can be re-approved.
 func (h *Handlers) revertPhotoStatusIfNoActiveJobs(ctx context.Context, photoID uint64) {
 	count, err := h.queries.CountActiveJobsForPhoto(ctx, photoID)
 	if err != nil || count > 0 {
 		return
 	}
-	h.queries.UpdatePhotoStatus(ctx, photoID, db.PhotoStatusApproved)
+	h.queries.UpdatePhotoStatus(ctx, photoID, db.PhotoStatusUploaded)
 }
 
 // ListPrinters returns available CUPS printers.

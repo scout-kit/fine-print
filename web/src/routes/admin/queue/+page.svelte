@@ -9,7 +9,8 @@
 	} from '$lib/api';
 	import { createSSE, type SSEConnection } from '$lib/sse';
 
-	let photos: Photo[] = $state([]);
+	let pendingPhotos: Photo[] = $state([]); // uploaded — for review tab
+	let allPhotos: Photo[] = $state([]);    // all — for queue job matching
 	let queue: QueueResponse | null = $state(null);
 	let activeTab = $state<'review' | 'queue'>('review');
 	let loading = $state(false);
@@ -23,12 +24,13 @@
 		if (loading) return;
 		loading = true;
 		try {
-			[photos, queue] = await Promise.all([
+			[pendingPhotos, allPhotos, queue] = await Promise.all([
+				listPhotos('uploaded'),
 				listPhotos(),
 				listQueue()
 			]);
 			// Initialize copies from photo data
-			for (const p of photos) {
+			for (const p of pendingPhotos) {
 				if (!(p.id in copiesMap)) {
 					copiesMap[p.id] = p.copies || 1;
 				}
@@ -53,10 +55,10 @@
 
 	onDestroy(() => sse?.close());
 
-	let pendingPhotos = $derived(photos.filter(p => p.status_id === 1));
+	// pendingPhotos is loaded directly with status=uploaded filter
 
 	function getPhotoForJob(job: PrintJob): Photo | undefined {
-		return photos.find(p => p.id === job.photo_id);
+		return allPhotos.find(p => p.id === job.photo_id);
 	}
 
 	async function handleApprove(id: number) {

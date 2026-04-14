@@ -93,6 +93,10 @@ export function rejectPhoto(id: number): Promise<{ status: string }> {
 	return request('POST', `/admin/photos/${id}/reject`);
 }
 
+export function unapprovePhoto(id: number): Promise<{ status: string }> {
+	return request('POST', `/admin/photos/${id}/unapprove`);
+}
+
 export function deletePhoto(id: number): Promise<{ status: string }> {
 	return request('DELETE', `/admin/photos/${id}`);
 }

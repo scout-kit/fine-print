@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import PhotoThumb from '$lib/PhotoThumb.svelte';
 	import PhotoModal from '$lib/PhotoModal.svelte';
 	import { listPhotos, listProjects, type Photo, type Project } from '$lib/api';
@@ -17,6 +18,10 @@
 	}
 
 	onMount(async () => {
+		// Read initial filters from URL query params
+		filterStatus = page.url.searchParams.get('status') || '';
+		filterProject = page.url.searchParams.get('project_id') || '';
+
 		projects = await listProjects();
 		load();
 	});

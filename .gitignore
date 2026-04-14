@@ -21,10 +21,8 @@ web/.svelte-kit/
 
 # Embedded frontend (compiled from web/build)
 # Only index.html placeholder is tracked for go:embed on fresh clone
-internal/frontend/build/_app/
-internal/frontend/build/*.html
+internal/frontend/build/
 !internal/frontend/build/index.html
-internal/frontend/build/robots.txt
 
 # Config with real passwords
 config.yml

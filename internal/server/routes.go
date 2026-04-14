@@ -47,6 +47,7 @@ func RegisterRoutes(mux *http.ServeMux, handlers *api.Handlers, queries *db.Quer
 	mux.Handle("GET /api/admin/photos", adminAuth(http.HandlerFunc(handlers.ListPhotos)))
 	mux.Handle("POST /api/admin/photos/{id}/approve", adminAuth(http.HandlerFunc(handlers.ApprovePhoto)))
 	mux.Handle("POST /api/admin/photos/{id}/reject", adminAuth(http.HandlerFunc(handlers.RejectPhoto)))
+	mux.Handle("POST /api/admin/photos/{id}/unapprove", adminAuth(http.HandlerFunc(handlers.UnapprovePhoto)))
 	mux.Handle("POST /api/admin/photos/{id}/override", adminAuth(http.HandlerFunc(handlers.OverridePhoto)))
 	mux.Handle("DELETE /api/admin/photos/{id}", adminAuth(http.HandlerFunc(handlers.DeletePhoto)))
 	mux.Handle("POST /api/admin/photos/{id}/reprint", adminAuth(http.HandlerFunc(handlers.ReprintPhoto)))

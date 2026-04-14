@@ -1,7 +1,7 @@
 <script lang="ts">
 	import {
 		previewUrl, downloadOriginalUrl, downloadRenderedUrl, renderPreviewUrl,
-		photoStatusName, approvePhoto, rejectPhoto, deletePhoto, reprintPhoto
+		photoStatusName, approvePhoto, rejectPhoto, unapprovePhoto, deletePhoto, reprintPhoto
 	} from '$lib/api';
 	import { isAdmin } from '$lib/stores';
 
@@ -102,6 +102,10 @@
 				{#if photo.status_id === 1}
 					<button class="success action-btn" onclick={handleApprove} disabled={acting}>Approve</button>
 					<button class="danger action-btn" onclick={handleReject} disabled={acting}>Reject</button>
+				{/if}
+
+				{#if photo.status_id === 2 || photo.status_id === 7}
+					<button class="ghost action-btn" onclick={() => act(() => unapprovePhoto(photo.id))} disabled={acting}>Unapprove</button>
 				{/if}
 
 				<a href="/edit?id={photo.id}" class="ghost action-btn">Edit</a>

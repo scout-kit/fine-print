@@ -318,25 +318,31 @@
 			{/if}
 
 			<div class="viewfinder-controls">
-				<select class="timer-select" bind:value={countdown}>
-					<option value={0}>No timer</option>
-					<option value={3}>3s</option>
-					<option value={5}>5s</option>
-				</select>
-				<button class="capture-btn" onclick={takePhoto} disabled={state === 'countdown'}>
-					<svg viewBox="0 0 24 24" width="28" height="28" fill="white" stroke="none">
-						<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
-						<circle cx="12" cy="13" r="4"/>
-					</svg>
-				</button>
-				<button class="booth-btn secondary" onclick={switchCamera}>
-					<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
-						<path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+				<div class="vc-left">
+					<select class="timer-select" bind:value={countdown}>
+						<option value={0}>No timer</option>
+						<option value={3}>3s</option>
+						<option value={5}>5s</option>
+					</select>
+				</div>
+				<div class="vc-center">
+					<button class="capture-btn" onclick={takePhoto} disabled={state === 'countdown'}>
+						<svg viewBox="0 0 24 24" width="28" height="28" fill="white" stroke="none">
+							<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+							<circle cx="12" cy="13" r="4"/>
+						</svg>
+					</button>
+				</div>
+				<div class="vc-right">
+					<button class="booth-btn secondary" onclick={switchCamera}>
+						<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+							<path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
+							<path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
 					</svg>
 				</button>
 			</div>
 		</div>
+	</div>
 
 	{:else if state === 'uploading'}
 		<div class="booth-center">
@@ -520,20 +526,15 @@
 		flex-shrink: 0;
 	}
 
-	.viewfinder-controls > * {
+	.vc-left, .vc-center, .vc-right {
 		flex: 1;
 		display: flex;
 		align-items: center;
 	}
 
-	.viewfinder-controls > :first-child { justify-content: flex-start; }
-	.viewfinder-controls > :nth-child(2) { justify-content: center; }
-	.viewfinder-controls > :last-child { justify-content: flex-end; }
-
-	.viewfinder-controls .capture-btn,
-	.viewfinder-controls .booth-btn.secondary {
-		flex: none;
-	}
+	.vc-left { justify-content: flex-start; }
+	.vc-center { justify-content: center; }
+	.vc-right { justify-content: flex-end; }
 
 	.capture-btn {
 		width: 68px; height: 68px;

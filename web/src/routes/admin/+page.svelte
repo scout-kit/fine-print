@@ -81,7 +81,7 @@
 	let pendingCount = $derived(photos.filter(p => p.status_id === 1).length); // uploaded
 	let inProgressCount = $derived(photos.filter(p => p.status_id >= 2 && p.status_id <= 4).length); // approved + queued + printing
 	let printedCount = $derived(photos.filter(p => p.status_id === 5).length);
-	let issuesCount = $derived(photos.filter(p => p.status_id === 6 || p.status_id === 7).length); // failed + rejected
+	let issuesCount = $derived(photos.filter(p => p.status_id === 6).length); // failed only
 </script>
 
 {#if !authenticated}
