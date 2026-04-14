@@ -63,7 +63,9 @@ func (c *CUPSPrinter) Print(printerName, filePath string, opts PrintOptions) (st
 	if opts.MediaSize != "" {
 		args = append(args, "-o", "media="+opts.MediaSize)
 	}
-	args = append(args, "-o", "fit-to-page")
+	// fill: scale to cover entire page (crop excess rather than letterbox)
+	// StpFullBleed=True: borderless printing (Canon Selphy / Gutenprint PPD)
+	args = append(args, "-o", "fill", "-o", "StpFullBleed=True")
 
 	if opts.Copies > 1 {
 		args = append(args, "-n", fmt.Sprintf("%d", opts.Copies))
