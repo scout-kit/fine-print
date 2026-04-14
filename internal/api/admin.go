@@ -416,6 +416,9 @@ func (h *Handlers) DeletePhoto(w http.ResponseWriter, r *http.Request) {
 		h.store.Delete(storage.BucketRendered, photo.RenderedKey.String)
 	}
 
+	// Delete print jobs (no cascade on FK)
+	h.queries.DeletePrintJobsByPhoto(r.Context(), id)
+
 	// Delete DB record (cascades to transforms/overrides)
 	if err := h.queries.DeletePhoto(r.Context(), id); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete photo")

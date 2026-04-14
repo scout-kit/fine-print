@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/scout-kit/fine-print/internal/db"
+	"github.com/scout-kit/fine-print/internal/storage"
 )
 
 // Gallery returns photos for the gallery view.
@@ -87,6 +88,18 @@ func (h *Handlers) DeleteOwnPhoto(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "cannot delete while printing")
 		return
 	}
+
+	// Delete files
+	h.store.Delete(storage.BucketOriginals, photo.OriginalKey)
+	if photo.PreviewKey.Valid {
+		h.store.Delete(storage.BucketPreviews, photo.PreviewKey.String)
+	}
+	if photo.RenderedKey.Valid {
+		h.store.Delete(storage.BucketRendered, photo.RenderedKey.String)
+	}
+
+	// Delete print jobs (no cascade on FK)
+	h.queries.DeletePrintJobsByPhoto(r.Context(), id)
 
 	h.queries.DeletePhoto(r.Context(), id)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})

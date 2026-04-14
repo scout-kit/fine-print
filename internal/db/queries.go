@@ -395,6 +395,11 @@ func (q *Queries) UpdatePrintJobStatus(ctx context.Context, id uint64, statusID 
 	return err
 }
 
+func (q *Queries) DeletePrintJobsByPhoto(ctx context.Context, photoID uint64) error {
+	_, err := q.db.ExecContext(ctx, "DELETE FROM print_jobs WHERE photo_id = ?", photoID)
+	return err
+}
+
 func (q *Queries) CountActiveJobsForPhoto(ctx context.Context, photoID uint64) (int, error) {
 	var count int
 	err := q.db.GetContext(ctx, &count,
