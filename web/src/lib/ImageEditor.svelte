@@ -197,27 +197,25 @@
 		const aspect = cropAspect();
 		let rectW: number, rectH: number, rectL: number, rectT: number;
 
-		if (useSaved && cropWidth > 0 && cropWidth < 1) {
+		if (useSaved && savedEdits?.transform) {
 			// Restore saved crop position
 			rectW = cropWidth * imgW;
 			rectH = cropHeight * imgH;
 			rectL = imgLeft + cropX * imgW;
 			rectT = imgTop + cropY * imgH;
 		} else {
-			// Default: largest crop within image area
-			const maxW = Math.min(imgW, cw);
-			const maxH = Math.min(imgH, ch);
-			if (maxW / maxH > aspect) {
-				rectH = maxH * 0.85;
+			// Default: largest possible crop, centered
+			if (imgW / imgH > aspect) {
+				rectH = imgH;
 				rectW = rectH * aspect;
 			} else {
-				rectW = maxW * 0.85;
+				rectW = imgW;
 				rectH = rectW / aspect;
 			}
 			rectW = Math.min(rectW, cw);
 			rectH = Math.min(rectH, ch);
-			rectL = (cw - rectW) / 2;
-			rectT = (ch - rectH) / 2;
+			rectL = imgLeft + (imgW - rectW) / 2;
+			rectT = imgTop + (imgH - rectH) / 2;
 		}
 
 		cropRect = new fabric.Rect({
