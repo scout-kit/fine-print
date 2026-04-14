@@ -91,39 +91,51 @@ func (c *CUPSPrinter) Print(printerName, filePath string, opts PrintOptions) (st
 }
 
 func (c *CUPSPrinter) JobStatus(jobID string) (string, error) {
-	out, err := exec.Command("lpstat", "-W", "all", "-o", jobID).CombinedOutput()
+	// Extract the numeric part from "PrinterName-NNN" for lpstat queries
+	numericID := jobID
+	if idx := strings.LastIndex(jobID, "-"); idx >= 0 {
+		numericID = jobID[idx+1:]
+	}
+
+	// Use lpstat -W all to list all jobs, then find ours
+	out, err := exec.Command("lpstat", "-W", "all").CombinedOutput()
 	if err != nil {
-		// If the job doesn't exist anymore, it's completed
-		if strings.Contains(string(out), "not found") {
-			return "completed", nil
-		}
-		return "", fmt.Errorf("lpstat failed: %w, output: %s", err, out)
+		// If lpstat fails entirely, assume completed (job already processed)
+		return "completed", nil
 	}
 
 	outStr := strings.TrimSpace(string(out))
 	if outStr == "" {
-		// Empty output means job completed and was removed from the queue
 		return "completed", nil
 	}
 
-	// Parse lpstat output for status keywords
-	lower := strings.ToLower(outStr)
-	switch {
-	case strings.Contains(lower, "completed"):
-		return "completed", nil
-	case strings.Contains(lower, "processing"):
-		return "processing", nil
-	case strings.Contains(lower, "pending"):
-		return "pending", nil
-	case strings.Contains(lower, "stopped"):
-		return "stopped", nil
-	case strings.Contains(lower, "canceled"):
-		return "canceled", nil
-	case strings.Contains(lower, "aborted"):
-		return "aborted", nil
-	default:
-		return "unknown", nil
+	// Find the line matching our job ID
+	for _, line := range strings.Split(outStr, "\n") {
+		// Lines look like: "Canon_SELPHY_CP1500-282 user 1024 Mon 14 Apr 2026 10:30:00"
+		if !strings.Contains(line, jobID) && !strings.Contains(line, "-"+numericID+" ") {
+			continue
+		}
+
+		lower := strings.ToLower(line)
+		switch {
+		case strings.Contains(lower, "completed"):
+			return "completed", nil
+		case strings.Contains(lower, "processing"):
+			return "processing", nil
+		case strings.Contains(lower, "stopped"):
+			return "stopped", nil
+		case strings.Contains(lower, "canceled"):
+			return "canceled", nil
+		case strings.Contains(lower, "aborted"):
+			return "aborted", nil
+		default:
+			// Job exists in output but no specific status keyword — it's pending/queued
+			return "pending", nil
+		}
 	}
+
+	// Job not found in any list — it completed and was removed
+	return "completed", nil
 }
 
 func (c *CUPSPrinter) CancelJob(jobID string) error {
