@@ -7,12 +7,14 @@ import (
 	"time"
 
 	"github.com/scout-kit/fine-print/internal/db"
+	"github.com/scout-kit/fine-print/internal/storage"
 )
 
 // QueueManager processes print jobs, one per printer concurrently.
 // Supports round-robin (auto-assign to enabled printers) and manual mode.
 type QueueManager struct {
 	queries   *db.Queries
+	store     storage.Store
 	printer   Printer
 	broadcast func(eventType string, data any)
 
@@ -25,9 +27,10 @@ type QueueManager struct {
 	rrIndex int
 }
 
-func NewQueueManager(queries *db.Queries, printer Printer, broadcast func(eventType string, data any)) *QueueManager {
+func NewQueueManager(queries *db.Queries, store storage.Store, printer Printer, broadcast func(eventType string, data any)) *QueueManager {
 	return &QueueManager{
 		queries:   queries,
+		store:     store,
 		printer:   printer,
 		broadcast: broadcast,
 		active:    make(map[string]*db.PrintJob),
@@ -206,7 +209,8 @@ func (q *QueueManager) processJob(ctx context.Context, job *db.PrintJob, printer
 		mediaSize = "4x6"
 	}
 
-	cupsJobID, err := q.printer.Print(printerName, photo.RenderedKey.String, PrintOptions{
+	filePath := q.store.Path(storage.BucketRendered, photo.RenderedKey.String)
+	cupsJobID, err := q.printer.Print(printerName, filePath, PrintOptions{
 		MediaSize: mediaSize,
 		Copies:    1,
 	})

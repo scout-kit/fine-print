@@ -92,7 +92,7 @@ func main() {
 	broadcastFn := func(eventType string, data any) {
 		sseHub.Broadcast(server.NewEvent(eventType, data))
 	}
-	queueMgr := printer.NewQueueManager(queries, cupsPrinter, broadcastFn)
+	queueMgr := printer.NewQueueManager(queries, store, cupsPrinter, broadcastFn)
 
 	// Initialize QR code handler
 	qrHandler := qrcode.NewHandler(cfg.Hotspot.Gateway, cfg.Server.Port)
