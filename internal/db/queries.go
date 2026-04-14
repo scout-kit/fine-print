@@ -168,6 +168,20 @@ func (q *Queries) ListPhotosByProject(ctx context.Context, projectID uint64) ([]
 	return photos, err
 }
 
+func (q *Queries) GetPhotosByIDs(ctx context.Context, ids []uint64) ([]Photo, error) {
+	if len(ids) == 0 {
+		return make([]Photo, 0), nil
+	}
+	query, args, err := sqlx.In("SELECT * FROM photos WHERE id IN (?)", ids)
+	if err != nil {
+		return nil, err
+	}
+	query = q.db.Rebind(query)
+	photos := make([]Photo, 0, len(ids))
+	err = q.db.SelectContext(ctx, &photos, query, args...)
+	return photos, err
+}
+
 func (q *Queries) UpdatePhotoStatus(ctx context.Context, id uint64, statusID uint) error {
 	_, err := q.db.ExecContext(ctx,
 		"UPDATE photos SET status_id = ?, updated_at = ? WHERE id = ?",

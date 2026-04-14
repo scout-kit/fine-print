@@ -97,6 +97,7 @@ func RegisterRoutes(mux *http.ServeMux, handlers *api.Handlers, queries *db.Quer
 
 	// Export
 	mux.Handle("GET /api/admin/export/{project_id}", adminAuth(http.HandlerFunc(handlers.ExportProject)))
+	mux.Handle("POST /api/admin/export/photos", adminAuth(http.HandlerFunc(handlers.ExportPhotos)))
 
 	// Admin SSE
 	mux.Handle("GET /api/admin/events", adminAuth(sseHub.Handler(true)))

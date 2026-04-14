@@ -247,6 +247,26 @@ export function renderPreviewUrl(id: number): string {
 	return `${BASE}/photos/${id}/render`;
 }
 
+export function exportProjectUrl(projectId: number): string {
+	return `${BASE}/admin/export/${projectId}`;
+}
+
+export async function exportPhotos(photoIds: number[]): Promise<void> {
+	const res = await fetch(`${BASE}/admin/export/photos`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ photo_ids: photoIds })
+	});
+	if (!res.ok) throw new Error('Export failed');
+	const blob = await res.blob();
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = url;
+	a.download = `fine-print-selection.zip`;
+	a.click();
+	URL.revokeObjectURL(url);
+}
+
 export function getSettings(): Promise<Record<string, string>> {
 	return request('GET', '/admin/settings');
 }
