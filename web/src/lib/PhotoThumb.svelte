@@ -11,17 +11,45 @@
 	interface Props {
 		photo: ThumbPhoto;
 		onclick: () => void;
+		onlongpress?: () => void;
 		showProject?: string;
 		selectable?: boolean;
 		selected?: boolean;
 	}
 
-	let { photo, onclick, showProject = '', selectable = false, selected = false }: Props = $props();
+	let { photo, onclick, onlongpress, showProject = '', selectable = false, selected = false }: Props = $props();
 
 	const hasPreview = $derived(!!(photo.preview_key || photo.has_preview));
+
+	let pressTimer: ReturnType<typeof setTimeout> | null = null;
+	let didLongPress = false;
+
+	function startPress() {
+		didLongPress = false;
+		pressTimer = setTimeout(() => {
+			didLongPress = true;
+			onlongpress?.();
+		}, 500);
+	}
+
+	function endPress() {
+		if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+	}
+
+	function handleClick() {
+		if (didLongPress) { didLongPress = false; return; }
+		onclick();
+	}
 </script>
 
-<button class="thumb" class:selected={selectable && selected} {onclick}>
+<button
+	class="thumb" class:selected={selectable && selected}
+	onclick={handleClick}
+	onpointerdown={startPress}
+	onpointerup={endPress}
+	onpointerleave={endPress}
+	oncontextmenu={(e) => { if (onlongpress) e.preventDefault(); }}
+>
 	<div class="image">
 		{#if hasPreview}
 			<img src={renderPreviewUrl(photo.id)} alt="Photo {photo.id}" loading="lazy" />
@@ -54,6 +82,9 @@
 		min-height: auto;
 		min-width: auto;
 		transition: border-color 0.15s;
+		-webkit-touch-callout: none;
+		-webkit-user-select: none;
+		user-select: none;
 	}
 
 	.thumb:hover {
@@ -74,6 +105,7 @@
 		width: 100%;
 		height: 100%;
 		object-fit: contain;
+		pointer-events: none;
 	}
 
 	.image .badge {

@@ -53,10 +53,16 @@
 		const next = new Set(selectedIds);
 		if (next.has(id)) next.delete(id); else next.add(id);
 		selectedIds = next;
+		if (next.size === 0) selectMode = false;
+	}
+
+	function enterSelectMode(id: number) {
+		selectMode = true;
+		selectedIds = new Set([id]);
 	}
 
 	function selectAll() { selectedIds = new Set(photos.map(p => p.id)); }
-	function deselectAll() { selectedIds = new Set(); }
+
 	function exitSelectMode() { selectMode = false; selectedIds = new Set(); }
 
 	async function handleExportSelected() {
@@ -85,17 +91,13 @@
 
 	{#if selectMode}
 		<button class="tool-btn" onclick={selectAll}>Select All</button>
-		<button class="tool-btn" onclick={deselectAll}>Deselect</button>
 		<span class="select-count">{selectedIds.size} selected</span>
 		<button class="tool-btn accent" onclick={handleExportSelected} disabled={selectedIds.size === 0 || exporting}>
 			{exporting ? 'Exporting...' : 'Download ZIP'}
 		</button>
 		<button class="tool-btn" onclick={exitSelectMode}>Cancel</button>
-	{:else}
-		<button class="tool-btn" onclick={() => selectMode = true}>Select</button>
-		{#if photos.length > 0}
-			<a href={exportProjectUrl(projectId)} class="tool-btn" download>Download All</a>
-		{/if}
+	{:else if photos.length > 0}
+		<a href={exportProjectUrl(projectId)} class="tool-btn" download>Download All</a>
 	{/if}
 </div>
 
@@ -107,6 +109,7 @@
 			<PhotoThumb
 				{photo}
 				onclick={() => handleThumbClick(photo)}
+				onlongpress={() => enterSelectMode(photo.id)}
 				selectable={selectMode}
 				selected={selectedIds.has(photo.id)}
 			/>

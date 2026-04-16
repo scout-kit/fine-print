@@ -36,10 +36,16 @@
 		const next = new Set(selectedIds);
 		if (next.has(id)) next.delete(id); else next.add(id);
 		selectedIds = next;
+		// Auto-exit select mode when nothing selected
+		if (next.size === 0) selectMode = false;
+	}
+
+	function enterSelectMode(id: number) {
+		selectMode = true;
+		selectedIds = new Set([id]);
 	}
 
 	function selectAll() { selectedIds = new Set(photos.map(p => p.id)); }
-	function deselectAll() { selectedIds = new Set(); }
 
 	function exitSelectMode() {
 		selectMode = false;
@@ -85,22 +91,20 @@
 	</select>
 </div>
 
-<div class="toolbar">
-	{#if selectMode}
+{#if selectMode}
+	<div class="toolbar">
 		<button class="tool-btn" onclick={selectAll}>Select All</button>
-		<button class="tool-btn" onclick={deselectAll}>Deselect</button>
 		<span class="select-count">{selectedIds.size} selected</span>
 		<button class="tool-btn primary" onclick={handleExportSelected} disabled={selectedIds.size === 0 || exporting}>
 			{exporting ? 'Exporting...' : 'Download ZIP'}
 		</button>
 		<button class="tool-btn" onclick={exitSelectMode}>Cancel</button>
-	{:else}
-		<button class="tool-btn" onclick={() => selectMode = true}>Select</button>
-		{#if filterProject}
-			<a href={exportProjectUrl(Number(filterProject))} class="tool-btn" download>Download All (ZIP)</a>
-		{/if}
-	{/if}
-</div>
+	</div>
+{:else if filterProject}
+	<div class="toolbar">
+		<a href={exportProjectUrl(Number(filterProject))} class="tool-btn" download>Download All (ZIP)</a>
+	</div>
+{/if}
 
 {#if photos.length === 0}
 	<p class="empty">No photos found.</p>
@@ -111,6 +115,7 @@
 			<PhotoThumb
 				{photo}
 				onclick={() => handleThumbClick(photo)}
+				onlongpress={() => enterSelectMode(photo.id)}
 				showProject={projectName(photo.project_id)}
 				selectable={selectMode}
 				selected={selectedIds.has(photo.id)}
