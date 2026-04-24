@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/scout-kit/fine-print/internal/db"
 	"github.com/scout-kit/fine-print/internal/imaging"
+	"github.com/scout-kit/fine-print/internal/settings"
 	"github.com/scout-kit/fine-print/internal/storage"
 
 	"golang.org/x/crypto/bcrypt"
@@ -539,20 +542,31 @@ func (h *Handlers) TestPrint(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotImplemented, "test print not yet implemented")
 }
 
-// GetSettings returns current system settings.
-func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
-	settings := map[string]string{}
-	for _, key := range []string{
-		"printer_name", "printer_media",
-		"hotspot_ssid", "hotspot_password", "gateway_ip", "server_port",
-	} {
-		val, _ := h.queries.GetSetting(r.Context(), key)
-		settings[key] = val
-	}
-	writeJSON(w, http.StatusOK, settings)
+// SettingField describes one tunable setting in the API response.
+type SettingField struct {
+	Key             string `json:"key"`
+	Value           string `json:"value"`
+	RequiresRestart bool   `json:"requires_restart"`
 }
 
-// UpdateSettings updates system settings.
+// GetSettings returns all tunable settings as a typed list.
+func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
+	fields := make([]SettingField, 0, len(settings.TunableKeys))
+	for _, key := range settings.TunableKeys {
+		val, _ := h.queries.GetSetting(r.Context(), key)
+		fields = append(fields, SettingField{
+			Key:             key,
+			Value:           val,
+			RequiresRestart: settings.RequiresRestart(key),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"fields": fields,
+	})
+}
+
+// UpdateSettings patches one or more tunable settings. Unknown keys are
+// rejected so typos don't silently write garbage into the settings table.
 func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var req map[string]string
 	if err := readJSON(r, &req); err != nil {
@@ -560,12 +574,120 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	allowed := make(map[string]bool, len(settings.TunableKeys))
+	for _, k := range settings.TunableKeys {
+		allowed[k] = true
+	}
+
+	anyRequiresRestart := false
+	changed := make([]string, 0, len(req))
 	for key, value := range req {
-		if err := h.queries.SetSetting(r.Context(), key, value); err != nil {
+		if !allowed[key] {
+			writeError(w, http.StatusBadRequest, "unknown setting: "+key)
+			return
+		}
+		if err := validateSettingValue(key, value); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := h.settings.Set(r.Context(), key, value); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update setting: "+key)
 			return
 		}
+		changed = append(changed, key)
+		if settings.RequiresRestart(key) {
+			anyRequiresRestart = true
+		}
+	}
+
+	h.broadcastAdmin("settings_changed", map[string]any{"keys": changed})
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":           "ok",
+		"changed":          changed,
+		"requires_restart": anyRequiresRestart,
+	})
+}
+
+// ChangeAdminPassword updates the admin password hash. Requires the caller
+// to supply the current password to prevent an open session from being
+// hijacked into a permanent lockout.
+func (h *Handlers) ChangeAdminPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Current string `json:"current"`
+		New     string `json:"new"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(req.New) < 4 {
+		writeError(w, http.StatusBadRequest, "new password must be at least 4 characters")
+		return
+	}
+
+	currentHash, _ := h.queries.GetSetting(r.Context(), settings.KeyAdminPasswordHash)
+	if currentHash == "" {
+		writeError(w, http.StatusInternalServerError, "admin password not initialized")
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(currentHash), []byte(req.Current)); err != nil {
+		writeError(w, http.StatusUnauthorized, "current password is incorrect")
+		return
+	}
+
+	newHash, err := bcrypt.GenerateFromPassword([]byte(req.New), bcrypt.DefaultCost)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to hash password")
+		return
+	}
+	if err := h.queries.SetSetting(r.Context(), settings.KeyAdminPasswordHash, string(newHash)); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to store password")
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// RestartService exits the process cleanly. When running under systemd
+// (Restart=always) or launchd (KeepAlive) the service supervisor respawns
+// it, which is how "requires restart" settings take effect.
+func (h *Handlers) RestartService(w http.ResponseWriter, r *http.Request) {
+	h.broadcastAdmin("restarting", nil)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "restarting"})
+	// Give the response a beat to flush before exiting.
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		log.Println("Restart requested via admin API — exiting for supervisor respawn")
+		os.Exit(0)
+	}()
+}
+
+// validateSettingValue enforces per-key value constraints before writing to the DB.
+func validateSettingValue(key, value string) error {
+	switch key {
+	case settings.KeyHotspotEnabled, settings.KeyDNSEnabled, settings.KeyPrinterAutoQueue:
+		if value != "true" && value != "false" {
+			return fmt.Errorf("%s must be 'true' or 'false'", key)
+		}
+	case settings.KeyDNSPort,
+		settings.KeyImagingMaxUpload,
+		settings.KeyImagingPreviewWidth,
+		settings.KeyImagingPrintWidth,
+		settings.KeyImagingPrintHeight:
+		n, err := strconv.Atoi(value)
+		if err != nil || n <= 0 {
+			return fmt.Errorf("%s must be a positive integer", key)
+		}
+	case settings.KeyImagingJPEGQuality:
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 1 || n > 100 {
+			return fmt.Errorf("%s must be between 1 and 100", key)
+		}
+	case settings.KeyPrinterMedia:
+		if value != "4x6" && value != "Postcard" {
+			return fmt.Errorf("%s must be '4x6' or 'Postcard'", key)
+		}
+	}
+	return nil
 }

@@ -267,12 +267,36 @@ export async function exportPhotos(photoIds: number[]): Promise<void> {
 	URL.revokeObjectURL(url);
 }
 
-export function getSettings(): Promise<Record<string, string>> {
+export interface SettingField {
+	key: string;
+	value: string;
+	requires_restart: boolean;
+}
+
+export interface SettingsResponse {
+	fields: SettingField[];
+}
+
+export interface UpdateSettingsResult {
+	status: string;
+	changed: string[];
+	requires_restart: boolean;
+}
+
+export function getSettings(): Promise<SettingsResponse> {
 	return request('GET', '/admin/settings');
 }
 
-export function updateSettings(settings: Record<string, string>): Promise<{ status: string }> {
-	return request('PUT', '/admin/settings', settings);
+export function updateSettings(patch: Record<string, string>): Promise<UpdateSettingsResult> {
+	return request('PUT', '/admin/settings', patch);
+}
+
+export function changeAdminPassword(current: string, next: string): Promise<{ status: string }> {
+	return request('POST', '/admin/settings/password', { current, new: next });
+}
+
+export function restartService(): Promise<{ status: string }> {
+	return request('POST', '/admin/settings/restart');
 }
 
 // Types

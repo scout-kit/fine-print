@@ -81,6 +81,13 @@ sudo ./scripts/install-service.sh
 
 ## Configuration
 
+Config is layered: **defaults → YAML file → DB (admin UI) → env vars → CLI flags**. The YAML
+seeds the DB on first boot; after that, runtime-tunable settings live in the DB and can be
+edited from the admin UI without touching files on disk.
+
+- **YAML-only (bootstrap)**: `server.*`, `data_dir`, `database.*`, `tls.*`, `dev.*`
+- **DB-backed (editable in admin UI)**: `hotspot.*`, `dns.*`, `printer.*`, `admin.password`, `imaging.*`
+
 Copy `configs/fine-print.example.yml` to `config.yml` and edit:
 
 ```yaml
@@ -93,7 +100,7 @@ database:
   sqlite_path: "data/fine-print.db"
 
 admin:
-  password: "changeme"
+  password: "changeme"  # seeds the DB on first boot; change it in the admin UI after that
 
 tls:
   enabled: false  # Enable for camera access on LAN
@@ -104,6 +111,10 @@ printer:
 ```
 
 Environment variables override config: `FINEPRINT_DEV=1`, `FINEPRINT_PORT=8080`, `FINEPRINT_TLS=1`, etc.
+
+Most DB-backed settings require a service restart to take effect (the admin UI flags these and
+exposes a **Restart Now** button that exits cleanly so systemd/launchd respawns the process).
+`printer.name`, `printer.media`, and `printer.auto_queue` are hot-reloadable.
 
 ## Architecture
 

@@ -11,18 +11,25 @@ import (
 	"github.com/scout-kit/fine-print/internal/imaging"
 	"github.com/scout-kit/fine-print/internal/printer"
 	"github.com/scout-kit/fine-print/internal/qrcode"
+	"github.com/scout-kit/fine-print/internal/settings"
 	"github.com/scout-kit/fine-print/internal/storage"
 )
 
+// BroadcastFunc sends an admin-scoped SSE event. Passed as a closure so the
+// api package doesn't need to import server (which would cycle).
+type BroadcastFunc func(eventType string, data any)
+
 // Handlers holds all API handler methods and their dependencies.
 type Handlers struct {
-	cfg      config.Config
-	queries  *db.Queries
-	store    storage.Store
-	pipeline *imaging.Pipeline
-	queue    *printer.QueueManager
-	printer  printer.Printer
-	qr       *qrcode.Handler
+	cfg            config.Config
+	queries        *db.Queries
+	store          storage.Store
+	pipeline       *imaging.Pipeline
+	queue          *printer.QueueManager
+	printer        printer.Printer
+	qr             *qrcode.Handler
+	settings       *settings.Store
+	broadcastAdmin BroadcastFunc
 }
 
 func NewHandlers(
@@ -33,15 +40,22 @@ func NewHandlers(
 	queue *printer.QueueManager,
 	p printer.Printer,
 	qr *qrcode.Handler,
+	settingsStore *settings.Store,
+	broadcastAdmin BroadcastFunc,
 ) *Handlers {
+	if broadcastAdmin == nil {
+		broadcastAdmin = func(string, any) {}
+	}
 	return &Handlers{
-		cfg:      cfg,
-		queries:  queries,
-		store:    store,
-		pipeline: pipeline,
-		queue:    queue,
-		printer:  p,
-		qr:       qr,
+		cfg:            cfg,
+		queries:        queries,
+		store:          store,
+		pipeline:       pipeline,
+		queue:          queue,
+		printer:        p,
+		qr:             qr,
+		settings:       settingsStore,
+		broadcastAdmin: broadcastAdmin,
 	}
 }
 

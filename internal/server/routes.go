@@ -94,6 +94,8 @@ func RegisterRoutes(mux *http.ServeMux, handlers *api.Handlers, queries *db.Quer
 	// Settings
 	mux.Handle("GET /api/admin/settings", adminAuth(http.HandlerFunc(handlers.GetSettings)))
 	mux.Handle("PUT /api/admin/settings", adminAuth(http.HandlerFunc(handlers.UpdateSettings)))
+	mux.Handle("POST /api/admin/settings/password", adminAuth(http.HandlerFunc(handlers.ChangeAdminPassword)))
+	mux.Handle("POST /api/admin/settings/restart", adminAuth(http.HandlerFunc(handlers.RestartService)))
 
 	// Export
 	mux.Handle("GET /api/admin/export/{project_id}", adminAuth(http.HandlerFunc(handlers.ExportProject)))

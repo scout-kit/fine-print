@@ -1,36 +1,71 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import {
-		getSettings, updateSettings, listPrinters,
-		syncPrinters, updatePrinterEnabled, getPrinterSettings, updatePrinterMode,
+		getSettings, updateSettings, changeAdminPassword, restartService,
+		listPrinters, syncPrinters, updatePrinterEnabled, getPrinterSettings, updatePrinterMode,
 		listFonts, uploadFont, deleteFont,
-		type PrinterInfo, type PrinterAssignment, type Font
+		type SettingField, type PrinterInfo, type PrinterAssignment, type Font
 	} from '$lib/api';
+	import { createSSE, type SSEConnection } from '$lib/sse';
 
-	let settings: Record<string, string> = $state({});
+	// Settings field keys — mirror internal/settings/settings.go.
+	const K = {
+		HotspotEnabled:     'hotspot_enabled',
+		HotspotSSID:        'hotspot_ssid',
+		HotspotPassword:    'hotspot_password',
+		HotspotInterface:   'hotspot_interface',
+		HotspotSubnet:      'hotspot_subnet',
+		HotspotGateway:     'gateway_ip',
+		DNSEnabled:         'dns_enabled',
+		DNSPort:            'dns_port',
+		PrinterName:        'printer_name',
+		PrinterMedia:       'printer_media',
+		PrinterAutoQueue:   'printer_auto_queue',
+		ImagingMaxUpload:   'imaging_max_upload_pixels',
+		ImagingPreviewW:    'imaging_preview_max_width',
+		ImagingPrintWidth:  'imaging_print_width',
+		ImagingPrintHeight: 'imaging_print_height',
+		ImagingJPEGQuality: 'imaging_jpeg_quality'
+	} as const;
+
+	let fields: Record<string, SettingField> = $state({});
+	let pending: Record<string, string> = $state({});
+
 	let printers: PrinterInfo[] = $state([]);
 	let printerAssignments: PrinterAssignment[] = $state([]);
 	let printerMode = $state('round_robin');
 	let fonts: Font[] = $state([]);
+
 	let saving = $state(false);
 	let saved = $state(false);
 	let error = $state('');
+	let restartPending = $state(false);
+	let restarting = $state(false);
 
-	// Editable fields
-	let printerMedia = $state('4x6');
-	let hotspotSSID = $state('');
-	let hotspotPassword = $state('');
-	let gatewayIP = $state('');
+	// Password change
+	let pwCurrent = $state('');
+	let pwNew = $state('');
+	let pwConfirm = $state('');
+	let pwSaving = $state(false);
+	let pwSaved = $state(false);
+	let pwError = $state('');
+
+	let sse: SSEConnection | null = null;
+
+	async function loadSettings() {
+		try {
+			const res = await getSettings();
+			const next: Record<string, SettingField> = {};
+			for (const f of res.fields) next[f.key] = f;
+			fields = next;
+			pending = {};
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to load settings';
+		}
+	}
 
 	async function load() {
-		try {
-			settings = await getSettings();
-			printerMedia = settings['printer_media'] || '4x6';
-			hotspotSSID = settings['hotspot_ssid'] || 'Fine Print';
-			hotspotPassword = settings['hotspot_password'] || '';
-			gatewayIP = settings['gateway_ip'] || '192.168.69.1';
-		} catch { /* ignore */ }
-
+		await loadSettings();
 		try { printers = await listPrinters(); } catch { /* CUPS may not be available */ }
 		try {
 			const ps = await getPrinterSettings();
@@ -40,25 +75,93 @@
 		try { fonts = await listFonts(); } catch { /* ignore */ }
 	}
 
-	onMount(load);
+	onMount(() => {
+		load();
+		sse = createSSE('/api/admin/events');
+		sse.state.subscribe((s) => {
+			if (s.lastEvent?.type === 'settings_changed') {
+				loadSettings();
+			}
+		});
+	});
+
+	onDestroy(() => sse?.close());
+
+	function fieldValue(key: string): string {
+		if (key in pending) return pending[key];
+		return fields[key]?.value ?? '';
+	}
+
+	function setField(key: string, value: string) {
+		pending[key] = value;
+	}
+
+	function fieldBool(key: string): boolean {
+		return fieldValue(key) === 'true';
+	}
+
+	function setBool(key: string, on: boolean) {
+		setField(key, on ? 'true' : 'false');
+	}
+
+	function dirty(): boolean {
+		return Object.keys(pending).length > 0;
+	}
 
 	async function handleSave() {
+		if (!dirty()) return;
 		saving = true;
 		saved = false;
 		error = '';
 		try {
-			await updateSettings({
-				printer_media: printerMedia,
-				hotspot_ssid: hotspotSSID,
-				hotspot_password: hotspotPassword,
-				gateway_ip: gatewayIP
-			});
+			const res = await updateSettings({ ...pending });
+			if (res.requires_restart) restartPending = true;
 			saved = true;
+			pending = {};
+			await loadSettings();
 			setTimeout(() => saved = false, 3000);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to save';
 		}
 		saving = false;
+	}
+
+	async function handleRestart() {
+		if (!confirm('Restart the Fine Print service now? Any in-flight prints will pause briefly.')) return;
+		restarting = true;
+		try {
+			await restartService();
+			// Server will go away; poll for it to come back.
+			setTimeout(() => window.location.reload(), 3000);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to restart';
+			restarting = false;
+		}
+	}
+
+	async function handlePasswordSave() {
+		pwError = '';
+		pwSaved = false;
+		if (pwNew !== pwConfirm) {
+			pwError = 'New passwords do not match';
+			return;
+		}
+		if (pwNew.length < 4) {
+			pwError = 'New password must be at least 4 characters';
+			return;
+		}
+		pwSaving = true;
+		try {
+			await changeAdminPassword(pwCurrent, pwNew);
+			pwSaved = true;
+			pwCurrent = '';
+			pwNew = '';
+			pwConfirm = '';
+			setTimeout(() => pwSaved = false, 3000);
+		} catch (e) {
+			pwError = e instanceof Error ? e.message : 'Failed to change password';
+		}
+		pwSaving = false;
 	}
 
 	async function handleSyncPrinters() {
@@ -90,12 +193,16 @@
 
 <h2>Settings</h2>
 
-{#if saved}
-	<div class="alert success">Settings saved</div>
-{/if}
+{#if saved}<div class="alert success">Settings saved</div>{/if}
+{#if error}<div class="alert error">{error}</div>{/if}
 
-{#if error}
-	<div class="alert error">{error}</div>
+{#if restartPending}
+	<div class="alert warning restart-banner">
+		<span>Some changes require a service restart to take effect.</span>
+		<button class="primary" onclick={handleRestart} disabled={restarting}>
+			{restarting ? 'Restarting…' : 'Restart Now'}
+		</button>
+	</div>
 {/if}
 
 <section class="settings-section">
@@ -140,10 +247,20 @@
 
 	<label class="field">
 		<span>Media Size</span>
-		<select bind:value={printerMedia}>
+		<select value={fieldValue(K.PrinterMedia)} onchange={(e) => setField(K.PrinterMedia, (e.currentTarget as HTMLSelectElement).value)}>
 			<option value="4x6">4x6</option>
 			<option value="Postcard">Postcard</option>
 		</select>
+	</label>
+
+	<label class="field">
+		<span>Default Printer (CUPS name)</span>
+		<input type="text" value={fieldValue(K.PrinterName)} oninput={(e) => setField(K.PrinterName, (e.currentTarget as HTMLInputElement).value)} placeholder="empty = auto-select" />
+	</label>
+
+	<label class="toggle-row">
+		<input type="checkbox" checked={fieldBool(K.PrinterAutoQueue)} onchange={(e) => setBool(K.PrinterAutoQueue, (e.currentTarget as HTMLInputElement).checked)} />
+		<span>Auto-queue approved photos</span>
 	</label>
 </section>
 
@@ -170,27 +287,112 @@
 </section>
 
 <section class="settings-section">
-	<h3>Hotspot</h3>
+	<h3>Hotspot <span class="restart-tag">restart required</span></h3>
+
+	<label class="toggle-row">
+		<input type="checkbox" checked={fieldBool(K.HotspotEnabled)} onchange={(e) => setBool(K.HotspotEnabled, (e.currentTarget as HTMLInputElement).checked)} />
+		<span>Enable WiFi hotspot on startup</span>
+	</label>
 
 	<label class="field">
 		<span>WiFi SSID</span>
-		<input type="text" bind:value={hotspotSSID} />
+		<input type="text" value={fieldValue(K.HotspotSSID)} oninput={(e) => setField(K.HotspotSSID, (e.currentTarget as HTMLInputElement).value)} />
 	</label>
 
 	<label class="field">
 		<span>WiFi Password (empty = open)</span>
-		<input type="text" bind:value={hotspotPassword} placeholder="Leave empty for open network" />
+		<input type="text" value={fieldValue(K.HotspotPassword)} oninput={(e) => setField(K.HotspotPassword, (e.currentTarget as HTMLInputElement).value)} placeholder="Leave empty for open network" />
+	</label>
+
+	<label class="field">
+		<span>Network Interface</span>
+		<input type="text" value={fieldValue(K.HotspotInterface)} oninput={(e) => setField(K.HotspotInterface, (e.currentTarget as HTMLInputElement).value)} placeholder="e.g. wlan0, en0" />
+	</label>
+
+	<label class="field">
+		<span>Subnet</span>
+		<input type="text" value={fieldValue(K.HotspotSubnet)} oninput={(e) => setField(K.HotspotSubnet, (e.currentTarget as HTMLInputElement).value)} placeholder="192.168.69.0/24" />
 	</label>
 
 	<label class="field">
 		<span>Gateway IP</span>
-		<input type="text" bind:value={gatewayIP} />
+		<input type="text" value={fieldValue(K.HotspotGateway)} oninput={(e) => setField(K.HotspotGateway, (e.currentTarget as HTMLInputElement).value)} />
 	</label>
 </section>
 
-<button class="primary" style="width: 100%;" onclick={handleSave} disabled={saving}>
-	{saving ? 'Saving...' : 'Save Settings'}
+<section class="settings-section">
+	<h3>DNS <span class="restart-tag">restart required</span></h3>
+
+	<label class="toggle-row">
+		<input type="checkbox" checked={fieldBool(K.DNSEnabled)} onchange={(e) => setBool(K.DNSEnabled, (e.currentTarget as HTMLInputElement).checked)} />
+		<span>Enable captive-portal DNS hijack</span>
+	</label>
+
+	<label class="field">
+		<span>DNS Port</span>
+		<input type="number" value={fieldValue(K.DNSPort)} oninput={(e) => setField(K.DNSPort, (e.currentTarget as HTMLInputElement).value)} />
+	</label>
+</section>
+
+<section class="settings-section">
+	<h3>Imaging <span class="restart-tag">restart required</span></h3>
+	<p class="hint">Values control the print render pipeline. 1800x1200 is 300dpi for 4x6.</p>
+
+	<label class="field">
+		<span>Print Width (pixels)</span>
+		<input type="number" value={fieldValue(K.ImagingPrintWidth)} oninput={(e) => setField(K.ImagingPrintWidth, (e.currentTarget as HTMLInputElement).value)} />
+	</label>
+
+	<label class="field">
+		<span>Print Height (pixels)</span>
+		<input type="number" value={fieldValue(K.ImagingPrintHeight)} oninput={(e) => setField(K.ImagingPrintHeight, (e.currentTarget as HTMLInputElement).value)} />
+	</label>
+
+	<label class="field">
+		<span>Preview Max Width (pixels)</span>
+		<input type="number" value={fieldValue(K.ImagingPreviewW)} oninput={(e) => setField(K.ImagingPreviewW, (e.currentTarget as HTMLInputElement).value)} />
+	</label>
+
+	<label class="field">
+		<span>JPEG Quality (1–100)</span>
+		<input type="number" min="1" max="100" value={fieldValue(K.ImagingJPEGQuality)} oninput={(e) => setField(K.ImagingJPEGQuality, (e.currentTarget as HTMLInputElement).value)} />
+	</label>
+
+	<label class="field">
+		<span>Max Upload Dimension (pixels)</span>
+		<input type="number" value={fieldValue(K.ImagingMaxUpload)} oninput={(e) => setField(K.ImagingMaxUpload, (e.currentTarget as HTMLInputElement).value)} />
+	</label>
+</section>
+
+<button class="primary save-btn" onclick={handleSave} disabled={saving || !dirty()}>
+	{saving ? 'Saving…' : dirty() ? 'Save Settings' : 'No unsaved changes'}
 </button>
+
+<section class="settings-section">
+	<h3>Admin Password</h3>
+
+	{#if pwSaved}<div class="alert success">Password updated</div>{/if}
+	{#if pwError}<div class="alert error">{pwError}</div>{/if}
+
+	<label class="field">
+		<span>Current Password</span>
+		<input type="password" bind:value={pwCurrent} autocomplete="current-password" />
+	</label>
+
+	<label class="field">
+		<span>New Password</span>
+		<input type="password" bind:value={pwNew} autocomplete="new-password" />
+	</label>
+
+	<label class="field">
+		<span>Confirm New Password</span>
+		<input type="password" bind:value={pwConfirm} autocomplete="new-password" />
+	</label>
+
+	<button class="primary" onclick={handlePasswordSave} disabled={pwSaving || !pwCurrent || !pwNew}>
+		{pwSaving ? 'Updating…' : 'Change Password'}
+	</button>
+</section>
 
 <style>
 	h2 { font-size: 1.5rem; margin-bottom: 16px; }
@@ -205,6 +407,37 @@
 		margin-bottom: 12px;
 		padding-bottom: 8px;
 		border-bottom: 1px solid var(--border);
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.restart-tag {
+		font-size: 0.65rem;
+		font-weight: 500;
+		padding: 2px 6px;
+		border-radius: 4px;
+		background: var(--warning-bg, rgba(200, 140, 0, 0.15));
+		color: var(--warning, #c88c00);
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.restart-banner {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		justify-content: space-between;
+	}
+
+	.restart-banner button {
+		flex: none;
+		padding: 8px 16px;
+	}
+
+	.save-btn {
+		width: 100%;
+		margin-bottom: 24px;
 	}
 
 	.field {
@@ -218,6 +451,23 @@
 		font-size: 0.8rem;
 		color: var(--text-muted);
 		font-weight: 500;
+	}
+
+	.toggle-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 12px;
+		cursor: pointer;
+	}
+
+	.toggle-row input {
+		width: auto;
+		min-height: auto;
+	}
+
+	.toggle-row span {
+		font-size: 0.9rem;
 	}
 
 	.hint {
