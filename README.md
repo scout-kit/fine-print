@@ -33,11 +33,14 @@
 - Go 1.22+
 - Node.js 20+
 - CUPS (for printing)
+- Linux only: `hostapd` + `dnsmasq` (for hotspot / captive portal)
+
+`make deps` verifies all of the above and prints a copy-paste install command for your OS (Homebrew on macOS, apt on Debian/Raspberry Pi OS) if anything is missing. It does not auto-install toolchains.
 
 ### Development
 
 ```bash
-# Install dependencies
+# Verify + install dependencies
 make deps
 
 # Run in development mode (port 8080, no hotspot/DNS)
@@ -69,15 +72,19 @@ make build-pi
 make build-linux
 ```
 
-### Production Install
+### Production Install (single command)
 
 ```bash
-# Build the binary
-make all
-
-# Install as a system service (requires sudo)
-sudo ./scripts/install-service.sh
+sudo make install
 ```
+
+That runs `scripts/install.sh`, which in turn:
+
+1. Calls `bootstrap.sh` to fail fast on missing deps.
+2. Builds the frontend + a native backend binary.
+3. Installs the binary, service file, and config to system paths via `install-service.sh`.
+
+On first boot, visit the kiosk URL in a browser — you'll be redirected to `/setup`, a one-time wizard that captures the admin password, hotspot SSID/password (both optional), and printer choice. The wizard refuses to run a second time once submitted.
 
 ## Configuration
 
