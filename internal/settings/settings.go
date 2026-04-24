@@ -37,6 +37,9 @@ const (
 	KeyImagingPrintWidth   = "imaging_print_width"
 	KeyImagingPrintHeight  = "imaging_print_height"
 	KeyImagingJPEGQuality  = "imaging_jpeg_quality"
+
+	KeyDiskGuardMinFreeBytes       = "diskguard_min_free_bytes"
+	KeyPrinterMonitorIntervalSecs  = "printer_monitor_interval_seconds"
 )
 
 // TunableKeys is the canonical set of keys exposed through the admin API.
@@ -48,14 +51,18 @@ var TunableKeys = []string{
 	KeyPrinterName, KeyPrinterMedia, KeyPrinterAutoQueue,
 	KeyImagingMaxUpload, KeyImagingPreviewWidth,
 	KeyImagingPrintWidth, KeyImagingPrintHeight, KeyImagingJPEGQuality,
+	KeyDiskGuardMinFreeBytes, KeyPrinterMonitorIntervalSecs,
 }
 
 // HotReloadKeys are read per-request/per-job rather than at boot, so
 // changes take effect without a restart.
 var HotReloadKeys = map[string]bool{
-	KeyPrinterName:      true,
-	KeyPrinterMedia:     true,
-	KeyPrinterAutoQueue: true,
+	KeyPrinterName:           true,
+	KeyPrinterMedia:          true,
+	KeyPrinterAutoQueue:      true,
+	KeyDiskGuardMinFreeBytes: true, // settings handler pushes new value into the guard
+	// KeyPrinterMonitorIntervalSecs requires a restart — the ticker is
+	// constructed once at boot.
 }
 
 // RequiresRestart reports whether changing the given key takes effect only
@@ -86,6 +93,18 @@ func (s *Store) GetInt(ctx context.Context, key string, def int) int {
 		return def
 	}
 	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
+}
+
+func (s *Store) GetInt64(ctx context.Context, key string, def int64) int64 {
+	v, err := s.q.GetSetting(ctx, key)
+	if err != nil || v == "" {
+		return def
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
 	if err != nil {
 		return def
 	}
@@ -140,6 +159,11 @@ func (s *Store) SeedFromConfig(ctx context.Context, cfg config.Config) error {
 		KeyImagingPrintWidth:   strconv.Itoa(cfg.Imaging.PrintWidth),
 		KeyImagingPrintHeight:  strconv.Itoa(cfg.Imaging.PrintHeight),
 		KeyImagingJPEGQuality:  strconv.Itoa(cfg.Imaging.JPEGQuality),
+
+		// Reliability defaults — these don't live in YAML but the admin
+		// UI expects every tunable key to have a value to display.
+		KeyDiskGuardMinFreeBytes:      "2147483648", // 2 GiB
+		KeyPrinterMonitorIntervalSecs: "30",
 	}
 	for key, value := range seeds {
 		present, err := s.Has(ctx, key)

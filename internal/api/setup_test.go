@@ -53,6 +53,7 @@ func newTestHandlers(t *testing.T) (*api.Handlers, *db.Queries) {
 		&stubPrinter{printers: []printer.PrinterInfo{{Name: "Selphy_CP1500", State: "idle", AcceptJobs: true}}},
 		nil, // qr unused
 		store,
+		nil, // diskguard unused
 		nil, // broadcast unused
 	)
 	return h, q

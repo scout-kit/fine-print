@@ -8,6 +8,7 @@ import (
 
 	"github.com/scout-kit/fine-print/internal/config"
 	"github.com/scout-kit/fine-print/internal/db"
+	"github.com/scout-kit/fine-print/internal/diskguard"
 	"github.com/scout-kit/fine-print/internal/imaging"
 	"github.com/scout-kit/fine-print/internal/printer"
 	"github.com/scout-kit/fine-print/internal/qrcode"
@@ -29,6 +30,7 @@ type Handlers struct {
 	printer        printer.Printer
 	qr             *qrcode.Handler
 	settings       *settings.Store
+	diskGuard      *diskguard.Guard
 	broadcastAdmin BroadcastFunc
 }
 
@@ -41,6 +43,7 @@ func NewHandlers(
 	p printer.Printer,
 	qr *qrcode.Handler,
 	settingsStore *settings.Store,
+	diskGuard *diskguard.Guard,
 	broadcastAdmin BroadcastFunc,
 ) *Handlers {
 	if broadcastAdmin == nil {
@@ -55,6 +58,7 @@ func NewHandlers(
 		printer:        p,
 		qr:             qr,
 		settings:       settingsStore,
+		diskGuard:      diskGuard,
 		broadcastAdmin: broadcastAdmin,
 	}
 }

@@ -12,6 +12,8 @@ func RegisterRoutes(mux *http.ServeMux, handlers *api.Handlers, queries *db.Quer
 
 	// Health check
 	mux.HandleFunc("GET /api/health", handlers.Health)
+	mux.HandleFunc("GET /healthz", handlers.Healthz)
+	mux.HandleFunc("GET /readyz", handlers.Readyz)
 
 	// First-run setup (public — only mutates while the wizard hasn't run)
 	mux.HandleFunc("GET /api/setup/status", handlers.SetupStatus)
@@ -94,6 +96,13 @@ func RegisterRoutes(mux *http.ServeMux, handlers *api.Handlers, queries *db.Quer
 	mux.Handle("GET /api/admin/printers/settings", adminAuth(http.HandlerFunc(handlers.GetPrinterSettings)))
 	mux.Handle("PUT /api/admin/printers/mode", adminAuth(http.HandlerFunc(handlers.UpdatePrinterMode)))
 	mux.Handle("POST /api/admin/printers/test", adminAuth(http.HandlerFunc(handlers.TestPrint)))
+
+	// Storage / disk usage (for admin banner + settings page)
+	mux.Handle("GET /api/admin/storage", adminAuth(http.HandlerFunc(handlers.GetStorage)))
+
+	// Backup / restore — tar.gz of DB + originals/overlays/fonts
+	mux.Handle("GET /api/admin/backup", adminAuth(http.HandlerFunc(handlers.BackupDownload)))
+	mux.Handle("POST /api/admin/restore", adminAuth(http.HandlerFunc(handlers.BackupRestore)))
 
 	// Settings
 	mux.Handle("GET /api/admin/settings", adminAuth(http.HandlerFunc(handlers.GetSettings)))

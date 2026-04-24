@@ -18,6 +18,18 @@ const maxUploadSize = 50 * 1024 * 1024 // 50MB
 
 // UploadPhoto handles photo uploads from guests.
 func (h *Handlers) UploadPhoto(w http.ResponseWriter, r *http.Request) {
+	// Disk guard: refuse uploads when the data volume is below its
+	// min-free threshold. Returning 507 "Insufficient Storage" lets
+	// clients surface the reason without retry storms.
+	if h.diskGuard != nil {
+		// Content-Length is advisory (guests may chunk), but it's the best
+		// pre-flight estimate we have.
+		if allow, usage, err := h.diskGuard.Allow(r.ContentLength); err == nil && !allow {
+			writeError(w, http.StatusInsufficientStorage, usage.Message)
+			return
+		}
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 
 	if err := r.ParseMultipartForm(maxUploadSize); err != nil {

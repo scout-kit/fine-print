@@ -1,26 +1,43 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { adminSession, adminLogout } from '$lib/api';
+	import { adminSession, adminLogout, getStorage, type DiskUsage } from '$lib/api';
 	import { isAdmin } from '$lib/stores';
+	import { createSSE, type SSEConnection } from '$lib/sse';
 
 	let { children } = $props();
 	let checking = $state(true);
 	let authenticated = $state(false);
+	let storageUsage: DiskUsage | null = $state(null);
+	let sseConn: SSEConnection | null = null;
 
 	// React to the isAdmin store so login from child pages updates the layout
 	isAdmin.subscribe(v => authenticated = v);
+
+	async function refreshStorage() {
+		try {
+			const s = await getStorage();
+			storageUsage = s.enabled ? (s.usage ?? null) : null;
+		} catch { /* ignore */ }
+	}
 
 	onMount(async () => {
 		try {
 			await adminSession();
 			isAdmin.set(true);
+			await refreshStorage();
+			// Poll once a minute — not worth wiring SSE for this.
+			setInterval(refreshStorage, 60_000);
+			// Surface printer disconnect events via the alert slot we already have.
+			sseConn = createSSE('/api/admin/events');
 		} catch {
 			isAdmin.set(false);
 		}
 		checking = false;
 	});
+
+	onDestroy(() => sseConn?.close());
 
 	async function handleLogout() {
 		await adminLogout();
@@ -58,6 +75,11 @@
 			{/each}
 			<button class="nav-item logout" onclick={handleLogout}>Logout</button>
 		</nav>
+		{#if storageUsage && (storageUsage.warn_active || !storageUsage.above_min_free)}
+			<div class="storage-banner" class:critical={!storageUsage.above_min_free}>
+				{storageUsage.message || 'Disk is filling up.'}
+			</div>
+		{/if}
 		<main>
 			{@render children()}
 		</main>
@@ -105,6 +127,21 @@
 		margin-left: auto;
 		color: var(--danger);
 		border: none;
+	}
+
+	.storage-banner {
+		padding: 10px 16px;
+		font-size: 0.85rem;
+		text-align: center;
+		background: var(--warning-bg, rgba(200, 140, 0, 0.15));
+		color: var(--warning, #c88c00);
+		border-bottom: 1px solid var(--border);
+	}
+
+	.storage-banner.critical {
+		background: var(--danger-bg, rgba(200, 60, 60, 0.15));
+		color: var(--danger, #c83c3c);
+		font-weight: 500;
 	}
 
 	main {

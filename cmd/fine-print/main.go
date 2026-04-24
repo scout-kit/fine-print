@@ -15,6 +15,7 @@ import (
 	"github.com/scout-kit/fine-print/internal/captive"
 	"github.com/scout-kit/fine-print/internal/config"
 	"github.com/scout-kit/fine-print/internal/db"
+	"github.com/scout-kit/fine-print/internal/diskguard"
 	"github.com/scout-kit/fine-print/internal/frontend"
 	"github.com/scout-kit/fine-print/internal/hotspot"
 	"github.com/scout-kit/fine-print/internal/imaging"
@@ -23,6 +24,7 @@ import (
 	"github.com/scout-kit/fine-print/internal/server"
 	"github.com/scout-kit/fine-print/internal/settings"
 	"github.com/scout-kit/fine-print/internal/storage"
+	"github.com/scout-kit/fine-print/internal/systemd"
 )
 
 func main() {
@@ -119,11 +121,17 @@ func main() {
 	// Initialize QR code handler
 	qrHandler := qrcode.NewHandler(cfg.Hotspot.Gateway, cfg.Server.Port)
 
+	// Disk guard — reads the min-free threshold from settings (defaults
+	// to 2 GiB). Runtime edits to diskguard_min_free_bytes take effect
+	// on the next Guard.Usage call without restart.
+	minFree := settingsStore.GetInt64(seedCtx, "diskguard_min_free_bytes", diskguard.DefaultMinFreeBytes)
+	diskGuard := diskguard.New(cfg.DataDir, minFree)
+
 	// Initialize API handlers
 	broadcastAdmin := func(eventType string, data any) {
 		sseHub.BroadcastAdmin(server.NewEvent(eventType, data))
 	}
-	handlers := api.NewHandlers(cfg, queries, store, pipeline, queueMgr, cupsPrinter, qrHandler, settingsStore, broadcastAdmin)
+	handlers := api.NewHandlers(cfg, queries, store, pipeline, queueMgr, cupsPrinter, qrHandler, settingsStore, diskGuard, broadcastAdmin)
 
 	// Get frontend filesystem
 	frontendFSys, err := frontend.FS()
@@ -178,6 +186,23 @@ func main() {
 	// Start print queue manager
 	go queueMgr.Run(ctx)
 
+	// Start the printer-availability monitor. Interval is tunable from
+	// settings (default 30s). Uses a closure for the expected-name lookup
+	// so admin changes to the configured printer take effect on the next
+	// poll without restart.
+	monitorInterval := time.Duration(settingsStore.GetInt(seedCtx, "printer_monitor_interval_seconds", 30)) * time.Second
+	monitor := printer.NewMonitor(cupsPrinter, printer.MonitorConfig{
+		Interval: monitorInterval,
+		ExpectedName: func() string {
+			return settingsStore.GetString(context.Background(), settings.KeyPrinterName, "")
+		},
+		Broadcast: func(eventType string, data any) {
+			sseHub.BroadcastAdmin(server.NewEvent(eventType, data))
+		},
+		Queue: queueMgr,
+	})
+	go monitor.Run(ctx)
+
 	// Start HTTP/HTTPS server
 	httpServer := &http.Server{
 		Addr:         srv.ListenAddr(),
@@ -231,12 +256,18 @@ func main() {
 	// Log startup summary
 	logStartupSummary(cfg)
 
+	// systemd integration: signal READY and start the watchdog pinger.
+	// No-ops when NOTIFY_SOCKET / WATCHDOG_USEC are unset (dev, launchd).
+	systemd.NotifyReady()
+	go systemd.RunWatchdog(ctx)
+
 	// Wait for shutdown signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	log.Println("Shutting down...")
+	systemd.NotifyStopping()
 	cancel() // Stop queue manager
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -320,6 +320,45 @@ export function restartService(): Promise<{ status: string }> {
 	return request('POST', '/admin/settings/restart');
 }
 
+// Storage / disk guard
+export interface DiskUsage {
+	total_bytes: number;
+	free_bytes: number;
+	used_bytes: number;
+	used_fraction: number;
+	min_free_bytes: number;
+	above_min_free: boolean;
+	warn_threshold: number;
+	warn_active: boolean;
+	message: string;
+	checked_at: string;
+}
+
+export interface StorageResponse {
+	enabled: boolean;
+	usage?: DiskUsage;
+}
+
+export function getStorage(): Promise<StorageResponse> {
+	return request('GET', '/admin/storage');
+}
+
+// Backup / restore
+export function backupDownloadURL(): string {
+	return `${BASE}/admin/backup`;
+}
+
+export async function restoreBackup(file: File): Promise<{ status: string; requires_restart: boolean; message: string }> {
+	const form = new FormData();
+	form.append('backup', file);
+	const res = await fetch(`${BASE}/admin/restore`, { method: 'POST', body: form });
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({ error: res.statusText }));
+		throw new Error(err.error || `Restore failed: ${res.status}`);
+	}
+	return res.json();
+}
+
 // Types
 export interface CropTransform {
 	crop_x: number;
