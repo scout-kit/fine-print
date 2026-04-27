@@ -51,9 +51,17 @@ chmod +x "$INSTALL_DIR/$BINARY_NAME"
 if [ ! -f "$CONFIG_DIR/config.yml" ]; then
     echo "Installing default config..."
     cp configs/fine-print.example.yml "$CONFIG_DIR/config.yml"
-    # Update data_dir to production path
-    sed -i.bak "s|data_dir: \"./data\"|data_dir: \"$DATA_DIR\"|" "$CONFIG_DIR/config.yml" 2>/dev/null || \
-    sed -i '' "s|data_dir: \"./data\"|data_dir: \"$DATA_DIR\"|" "$CONFIG_DIR/config.yml"
+    # Rewrite paths to absolute production locations. Both data_dir and
+    # database.sqlite_path need to be absolute, otherwise SQLite resolves
+    # against systemd's WorkingDirectory and looks for a non-existent
+    # data/ subdir.
+    sed_inplace() {
+        # GNU sed (Linux) takes -i.bak; BSD sed (macOS) takes -i ''.
+        sed -i.bak "$1" "$CONFIG_DIR/config.yml" 2>/dev/null || \
+        sed -i '' "$1" "$CONFIG_DIR/config.yml"
+    }
+    sed_inplace "s|data_dir: \"./data\"|data_dir: \"$DATA_DIR\"|"
+    sed_inplace "s|sqlite_path: \"data/fine-print.db\"|sqlite_path: \"$DATA_DIR/fine-print.db\"|"
     rm -f "$CONFIG_DIR/config.yml.bak"
     echo "  Edit $CONFIG_DIR/config.yml to set your admin password and preferences."
 else
@@ -72,6 +80,10 @@ case "$OS" in
 
         echo "Loading service..."
         launchctl load -w "$PLIST_DST" 2>/dev/null || true
+        # If the service was already loaded (re-running install) the load
+        # above is a no-op — kickstart forces a clean restart so the new
+        # binary actually runs.
+        launchctl kickstart -k system/com.fineprint.app 2>/dev/null || true
 
         echo ""
         echo "Service installed. Commands:"
@@ -91,7 +103,10 @@ case "$OS" in
         echo "Enabling and starting service..."
         systemctl daemon-reload
         systemctl enable fine-print
-        systemctl start fine-print
+        # `restart` covers both first-install (starts) and re-install
+        # (picks up the new binary). `start` would be a no-op on a
+        # running service and leave the old binary live.
+        systemctl restart fine-print
 
         echo ""
         echo "Service installed and started. Commands:"

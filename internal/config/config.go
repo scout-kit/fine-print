@@ -3,11 +3,26 @@ package config
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+// defaultHotspotInterface returns the typical wireless interface for the
+// host OS. Linux Pi OS uses wlan0; macOS uses en0. A user-supplied value
+// in YAML / DB always wins.
+func defaultHotspotInterface() string {
+	switch runtime.GOOS {
+	case "linux":
+		return "wlan0"
+	case "darwin":
+		return "en0"
+	default:
+		return ""
+	}
+}
 
 type Config struct {
 	Server   ServerConfig   `yaml:"server"`
@@ -88,7 +103,7 @@ func DefaultConfig() Config {
 		Hotspot: HotspotConfig{
 			Enabled:   true,
 			SSID:      "Fine Print",
-			Interface: "en0",
+			Interface: defaultHotspotInterface(),
 			Subnet:    "192.168.69.0/24",
 			Gateway:   "192.168.69.1",
 		},

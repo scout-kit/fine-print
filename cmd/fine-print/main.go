@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -59,7 +60,16 @@ func main() {
 		log.Fatalf("Failed to initialize storage: %v", err)
 	}
 
-	// Initialize database
+	// Initialize database. Make sure the parent dir of the sqlite file
+	// exists — installs that don't rewrite the path to absolute would
+	// otherwise crash on first boot with SQLITE_CANTOPEN.
+	if cfg.Database.Driver == "sqlite" && cfg.Database.SQLitePath != "" {
+		if dir := filepath.Dir(cfg.Database.SQLitePath); dir != "" && dir != "." {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				log.Fatalf("Failed to create database directory %s: %v", dir, err)
+			}
+		}
+	}
 	database, err := db.Open(cfg.Database)
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
@@ -147,7 +157,10 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Start hotspot (if enabled)
+	// Start hotspot (if enabled). Failures are non-fatal: a misconfigured
+	// interface or missing capabilities used to crash-loop the service,
+	// locking the admin out of the very UI they need to fix it. Log loudly
+	// and keep serving — the kiosk is still reachable over wired/LAN.
 	if cfg.Hotspot.Enabled && !cfg.Dev.Mode {
 		hotspotMgr := hotspot.NewManager()
 		hotspotCfg := hotspot.Config{
@@ -158,14 +171,11 @@ func main() {
 			Gateway:   cfg.Hotspot.Gateway,
 		}
 		if err := hotspotMgr.Start(hotspotCfg); err != nil {
-			if _, ok := err.(*hotspot.ErrManualSetupRequired); ok {
-				log.Printf("WARNING: %v", err)
-				log.Println("Continuing without hotspot management...")
-			} else {
-				log.Fatalf("Failed to start hotspot: %v", err)
-			}
+			log.Printf("WARNING: hotspot failed to start: %v", err)
+			log.Printf("WARNING: continuing without hotspot — fix interface/permissions in admin settings, then restart")
+		} else {
+			defer hotspotMgr.Stop()
 		}
-		defer hotspotMgr.Stop()
 	}
 
 	// Start DNS server (if enabled)

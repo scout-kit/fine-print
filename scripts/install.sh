@@ -13,6 +13,18 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$REPO_ROOT"
 
+# --- Require root upfront -----------------------------------------------------
+# Service install needs root, and trying to drop privileges back to SUDO_USER
+# fails when the repo lives in a root-owned tree like /opt. Just run the whole
+# pipeline as root — the only side effect is root-owned node_modules and bin/,
+# which is fine for a kiosk-style system install.
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "make install must be run with sudo:" >&2
+    echo "  sudo make install" >&2
+    exit 1
+fi
+
 # --- Pre-flight ---------------------------------------------------------------
 
 echo "→ Running dependency check"
@@ -28,23 +40,12 @@ OS="$(uname -s)"
 ARCH="$(uname -m)"
 
 echo "→ Building frontend"
-# `npm install` under sudo can create root-owned node_modules, making later
-# dev work painful. Install as the invoking user when possible.
-if [ -n "${SUDO_USER:-}" ] && [ "$(id -u)" = 0 ]; then
-    sudo -u "$SUDO_USER" -H bash -c "cd '$REPO_ROOT/web' && npm install && npm run build"
-else
-    ( cd web && npm install && npm run build )
-fi
+( cd web && npm install && npm run build )
 rm -rf internal/frontend/build
 cp -r web/build internal/frontend/build
 
 echo "→ Building backend for $OS/$ARCH"
-# Native build — install.sh runs on the target machine.
-if [ -n "${SUDO_USER:-}" ] && [ "$(id -u)" = 0 ]; then
-    sudo -u "$SUDO_USER" -H go build -o bin/fine-print ./cmd/fine-print
-else
-    go build -o bin/fine-print ./cmd/fine-print
-fi
+go build -o bin/fine-print ./cmd/fine-print
 
 if [ ! -x bin/fine-print ]; then
     echo "Build did not produce bin/fine-print" >&2
@@ -54,11 +55,6 @@ fi
 echo
 
 # --- Install as service -------------------------------------------------------
-
-if [ "$(id -u)" -ne 0 ]; then
-    echo "Install step needs root. Re-run with: sudo make install"
-    exit 1
-fi
 
 echo "→ Installing service"
 bash "$SCRIPT_DIR/install-service.sh"
