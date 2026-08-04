@@ -38,8 +38,8 @@ const (
 	KeyImagingPrintHeight  = "imaging_print_height"
 	KeyImagingJPEGQuality  = "imaging_jpeg_quality"
 
-	KeyDiskGuardMinFreeBytes       = "diskguard_min_free_bytes"
-	KeyPrinterMonitorIntervalSecs  = "printer_monitor_interval_seconds"
+	KeyDiskGuardMinFreeBytes      = "diskguard_min_free_bytes"
+	KeyPrinterMonitorIntervalSecs = "printer_monitor_interval_seconds"
 )
 
 // TunableKeys is the canonical set of keys exposed through the admin API.

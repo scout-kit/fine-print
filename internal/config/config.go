@@ -165,10 +165,12 @@ func ApplyEnv(cfg *Config) {
 // ApplyBootstrapEnv applies env vars for fields that must be resolved before
 // the database is opened.
 func ApplyBootstrapEnv(cfg *Config) {
+	// Only Dev.Mode is set here. Suppressing hotspot/DNS happens in
+	// ApplyTunableEnv instead: a DB overlay runs between the two and would
+	// otherwise re-enable them, leaving cfg claiming the hotspot is on while
+	// dev mode keeps it off.
 	if v := os.Getenv("FINEPRINT_DEV"); v == "1" || strings.EqualFold(v, "true") {
 		cfg.Dev.Mode = true
-		cfg.Hotspot.Enabled = false
-		cfg.DNS.Enabled = false
 	}
 	if v := os.Getenv("FINEPRINT_PORT"); v != "" {
 		if port, err := strconv.Atoi(v); err == nil {
@@ -212,6 +214,15 @@ func ApplyTunableEnv(cfg *Config) {
 	}
 	if v := os.Getenv("FINEPRINT_PRINTER_NAME"); v != "" {
 		cfg.Printer.Name = v
+	}
+
+	// Dev mode never brings up the hotspot or DNS server. Applied last so a
+	// DB-backed hotspot_enabled=true can't quietly contradict it — startup
+	// gates on Dev.Mode regardless, but cfg is also what the admin UI and
+	// the startup summary report.
+	if cfg.Dev.Mode {
+		cfg.Hotspot.Enabled = false
+		cfg.DNS.Enabled = false
 	}
 }
 

@@ -84,6 +84,18 @@ That runs `scripts/install.sh`, which in turn:
 2. Builds the frontend + a native backend binary.
 3. Installs the binary, service file, and config to system paths via `install-service.sh`.
 
+The whole pipeline runs as root, `npm install` included — which means package
+lifecycle scripts execute as root, and `web/node_modules/`, `bin/`, and the
+build caches end up root-owned. That's intentional: a system install lives in
+a root-owned tree like `/opt/fine-print`, where dropping back to `SUDO_USER`
+can't write. `install.sh` always rebuilds, so pre-building as your own user
+doesn't avoid it.
+
+Worth knowing if the checkout doubles as your dev tree: after a
+`sudo make install`, reclaim it with
+`sudo chown -R "$USER" web/node_modules bin`, or keep a separate clone for
+deployment. `make dev` and `make build` never need sudo.
+
 On first boot, visit the kiosk URL in a browser — you'll be redirected to `/setup`, a one-time wizard that captures the admin password, hotspot SSID/password (both optional), and printer choice. The wizard refuses to run a second time once submitted.
 
 ## Operations

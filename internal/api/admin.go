@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -580,19 +581,38 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		allowed[k] = true
 	}
 
-	anyRequiresRestart := false
-	changed := make([]string, 0, len(req))
-	for key, value := range req {
+	// Validate everything before writing anything. Doing both in one pass
+	// meant a bad key partially applied the request, and because Go
+	// randomizes map iteration order, *which* keys survived differed between
+	// identical requests.
+	keys := make([]string, 0, len(req))
+	for key := range req {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys) // deterministic write order and stable "changed" list
+
+	for _, key := range keys {
 		if !allowed[key] {
 			writeError(w, http.StatusBadRequest, "unknown setting: "+key)
 			return
 		}
-		if err := validateSettingValue(key, value); err != nil {
+		if err := validateSettingValue(key, req[key]); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+	}
+
+	anyRequiresRestart := false
+	changed := make([]string, 0, len(keys))
+	for _, key := range keys {
+		value := req[key]
 		if err := h.settings.Set(r.Context(), key, value); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update setting: "+key)
+			// A store failure here can still leave earlier keys applied.
+			// Report which ones landed so the admin isn't guessing.
+			writeJSON(w, http.StatusInternalServerError, map[string]any{
+				"error":   "failed to update setting: " + key,
+				"applied": changed,
+			})
 			return
 		}
 		changed = append(changed, key)

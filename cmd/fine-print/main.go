@@ -134,7 +134,7 @@ func main() {
 	// Disk guard — reads the min-free threshold from settings (defaults
 	// to 2 GiB). Runtime edits to diskguard_min_free_bytes take effect
 	// on the next Guard.Usage call without restart.
-	minFree := settingsStore.GetInt64(seedCtx, "diskguard_min_free_bytes", diskguard.DefaultMinFreeBytes)
+	minFree := settingsStore.GetInt64(seedCtx, settings.KeyDiskGuardMinFreeBytes, diskguard.DefaultMinFreeBytes)
 	diskGuard := diskguard.New(cfg.DataDir, minFree)
 
 	// Initialize API handlers
@@ -200,7 +200,7 @@ func main() {
 	// settings (default 30s). Uses a closure for the expected-name lookup
 	// so admin changes to the configured printer take effect on the next
 	// poll without restart.
-	monitorInterval := time.Duration(settingsStore.GetInt(seedCtx, "printer_monitor_interval_seconds", 30)) * time.Second
+	monitorInterval := time.Duration(settingsStore.GetInt(seedCtx, settings.KeyPrinterMonitorIntervalSecs, 30)) * time.Second
 	monitor := printer.NewMonitor(cupsPrinter, printer.MonitorConfig{
 		Interval: monitorInterval,
 		ExpectedName: func() string {

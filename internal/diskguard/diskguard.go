@@ -6,7 +6,6 @@ package diskguard
 import (
 	"fmt"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -64,16 +63,10 @@ func (g *Guard) Usage() (Usage, error) {
 	path := g.path
 	g.mu.RUnlock()
 
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(path, &stat); err != nil {
-		return Usage{}, fmt.Errorf("statfs %s: %w", path, err)
+	total, free, err := statfs(path)
+	if err != nil {
+		return Usage{}, err
 	}
-
-	// Use available-to-non-root (Bavail) rather than Bfree, which matches
-	// what `df` reports and what users see in the UI.
-	blockSize := int64(stat.Bsize)
-	total := int64(stat.Blocks) * blockSize
-	free := int64(stat.Bavail) * blockSize
 	used := total - free
 	usedFrac := 0.0
 	if total > 0 {
