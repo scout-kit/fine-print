@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/scout-kit/fine-print/internal/db"
@@ -33,8 +36,8 @@ func (h *Handlers) AdminLogin(w http.ResponseWriter, r *http.Request) {
 	storedHash, _ := h.queries.GetSetting(r.Context(), settings.KeyAdminPasswordHash)
 	if storedHash == "" {
 		writeJSON(w, http.StatusForbidden, map[string]string{
-			"error":         "setup_required",
-			"redirect":      "/setup",
+			"error":    "setup_required",
+			"redirect": "/setup",
 		})
 		return
 	}
@@ -655,17 +658,33 @@ func (h *Handlers) ChangeAdminPassword(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// RestartService exits the process cleanly. When running under systemd
+// RestartService triggers a graceful shutdown. When running under systemd
 // (Restart=always) or launchd (KeepAlive) the service supervisor respawns
 // it, which is how "requires restart" settings take effect.
+//
+// This raises SIGTERM against our own PID rather than calling os.Exit so the
+// normal shutdown path in main() runs: the HTTP server drains, the SQLite
+// connection is closed (checkpointing and removing the -wal sidecar), the
+// hotspot/DNS managers are stopped, and systemd is told we're STOPPING.
+// os.Exit would skip every one of those.
 func (h *Handlers) RestartService(w http.ResponseWriter, r *http.Request) {
 	h.broadcastAdmin("restarting", nil)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "restarting"})
-	// Give the response a beat to flush before exiting.
+	// Give the response a beat to flush before we start tearing down.
 	go func() {
 		time.Sleep(500 * time.Millisecond)
-		log.Println("Restart requested via admin API — exiting for supervisor respawn")
-		os.Exit(0)
+		log.Println("Restart requested via admin API — signaling graceful shutdown for supervisor respawn")
+		proc, err := os.FindProcess(os.Getpid())
+		if err != nil {
+			// Should be unreachable; fall back to a hard exit rather than
+			// leaving the admin with a restart button that does nothing.
+			log.Printf("Restart: cannot find own process (%v) — exiting hard", err)
+			os.Exit(0)
+		}
+		if err := proc.Signal(syscall.SIGTERM); err != nil {
+			log.Printf("Restart: SIGTERM failed (%v) — exiting hard", err)
+			os.Exit(0)
+		}
 	}()
 }
 
@@ -704,6 +723,71 @@ func validateSettingValue(key, value string) error {
 		if err != nil || n < 5 || n > 3600 {
 			return fmt.Errorf("%s must be between 5 and 3600 seconds", key)
 		}
+
+	// The hotspot keys below are interpolated into generated hostapd and
+	// dnsmasq config files, so they're validated for both correctness and
+	// injection. A newline here would smuggle arbitrary directives into
+	// those files; a bad value silently prevents the hotspot from coming
+	// up at all, which locks admins out of the UI they'd use to fix it.
+	case settings.KeyHotspotSSID:
+		if err := errIfControlChars(key, value); err != nil {
+			return err
+		}
+		// IEEE 802.11 caps the SSID at 32 bytes.
+		if len(value) < 1 || len(value) > 32 {
+			return fmt.Errorf("%s must be between 1 and 32 characters", key)
+		}
+	case settings.KeyHotspotPassword:
+		if err := errIfControlChars(key, value); err != nil {
+			return err
+		}
+		// Empty means an open network. Otherwise WPA2-PSK requires a
+		// passphrase of 8-63 printable ASCII characters — hostapd refuses
+		// to start outside that range.
+		if value != "" && (len(value) < 8 || len(value) > 63) {
+			return fmt.Errorf("%s must be empty (open network) or 8-63 characters", key)
+		}
+	case settings.KeyHotspotInterface:
+		if err := errIfControlChars(key, value); err != nil {
+			return err
+		}
+		if value == "" {
+			return fmt.Errorf("%s must not be empty", key)
+		}
+		if len(value) > 15 {
+			// IFNAMSIZ is 16 including the NUL terminator.
+			return fmt.Errorf("%s must be at most 15 characters", key)
+		}
+		for _, c := range value {
+			valid := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+				(c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-' || c == ':'
+			if !valid {
+				return fmt.Errorf("%s may only contain letters, digits, '.', '_', '-' and ':'", key)
+			}
+		}
+	case settings.KeyHotspotGateway:
+		ip := net.ParseIP(value)
+		if ip == nil || ip.To4() == nil {
+			return fmt.Errorf("%s must be a valid IPv4 address", key)
+		}
+	case settings.KeyHotspotSubnet:
+		if _, _, err := net.ParseCIDR(value); err != nil {
+			return fmt.Errorf("%s must be a valid IPv4 CIDR block (e.g. 192.168.69.0/24)", key)
+		}
+	}
+	return nil
+}
+
+// errIfControlChars rejects control characters in values that get written
+// into generated config files. Newlines are the injection vector that
+// matters — a value containing one becomes an extra hostapd/dnsmasq
+// directive — but nothing legitimate here needs any control character, so
+// the whole class is refused.
+func errIfControlChars(key, value string) error {
+	if strings.ContainsFunc(value, func(c rune) bool {
+		return c < 0x20 || c == 0x7f
+	}) {
+		return fmt.Errorf("%s must not contain control characters such as newlines or tabs", key)
 	}
 	return nil
 }

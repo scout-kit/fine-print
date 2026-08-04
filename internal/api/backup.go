@@ -177,10 +177,35 @@ func (h *Handlers) BackupRestore(w http.ResponseWriter, r *http.Request) {
 	// Swap time — move old data aside, promote staging into place.
 	stamp := time.Now().UTC().Format("20060102-150405")
 
+	// Drain the WAL into the current database first, so the copy we're about
+	// to move aside is a complete, self-contained file someone can roll back
+	// to. Best-effort: a busy checkpoint shouldn't block the restore.
+	if _, err := h.queries.ExecDirect(r.Context(), "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		log.Printf("restore: pre-swap checkpoint failed (rollback copy may be incomplete): %v", err)
+	}
+
 	// DB
 	if err := swapFile(h.cfg.Database.SQLitePath, filepath.Join(staging, "fine-print.db"), stamp); err != nil {
 		writeError(w, http.StatusInternalServerError, "swap db: "+err.Error())
 		return
+	}
+	// The database runs in WAL mode, so the live DB has -wal/-shm sidecars
+	// holding frames that belong to the database we just moved aside. The
+	// snapshot in the archive is a VACUUM'd standalone file with no WAL, so
+	// leaving the old sidecars next to it would let SQLite replay foreign
+	// frames over the restored data. Move them aside with the same stamp so
+	// the restored DB is opened clean (and the old set stays recoverable).
+	for _, suffix := range []string{"-wal", "-shm"} {
+		sidecar := h.cfg.Database.SQLitePath + suffix
+		if _, err := os.Stat(sidecar); err != nil {
+			continue
+		}
+		if err := os.Rename(sidecar, fmt.Sprintf("%s.bak-%s", sidecar, stamp)); err != nil {
+			// Refuse to leave a half-restored DB behind a stale WAL.
+			writeError(w, http.StatusInternalServerError,
+				fmt.Sprintf("failed to clear stale %s sidecar: %v", suffix, err))
+			return
+		}
 	}
 	// Buckets — best-effort; absence is fine (an event with no uploads).
 	for _, sub := range []string{"originals", "overlays", "fonts"} {
