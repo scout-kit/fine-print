@@ -1,11 +1,15 @@
 <script lang="ts">
 	import { renderPreviewUrl, previewUrl, photoStatusName } from '$lib/api';
+	import { formatTakenAtShort, isExifDate } from '$lib/photometa';
 
 	interface ThumbPhoto {
 		id: number;
 		status_id: number;
 		preview_key?: string | null;
 		has_preview?: boolean;
+		created_at?: string;
+		taken_at?: string;
+		taken_at_source?: 'exif' | 'upload';
 	}
 
 	interface Props {
@@ -15,11 +19,20 @@
 		showProject?: string;
 		selectable?: boolean;
 		selected?: boolean;
+		/** Show the capture date under the thumbnail. */
+		showTakenAt?: boolean;
 	}
 
-	let { photo, onclick, onlongpress, showProject = '', selectable = false, selected = false }: Props = $props();
+	let { photo, onclick, onlongpress, showProject = '', selectable = false, selected = false, showTakenAt = false }: Props = $props();
 
 	const hasPreview = $derived(!!(photo.preview_key || photo.has_preview));
+	// Only render a date when the photo actually carries a timestamp.
+	const takenAtLabel = $derived(
+		showTakenAt && (photo.taken_at || photo.created_at)
+			? formatTakenAtShort({ created_at: photo.created_at ?? '', taken_at: photo.taken_at, taken_at_source: photo.taken_at_source })
+			: ''
+	);
+	const takenAtIsExif = $derived(isExifDate({ created_at: photo.created_at ?? '', taken_at_source: photo.taken_at_source }));
 
 	let pressTimer: ReturnType<typeof setTimeout> | null = null;
 	let didLongPress = false;
@@ -68,9 +81,27 @@
 	{#if showProject}
 		<span class="project-label">{showProject}</span>
 	{/if}
+	{#if takenAtLabel}
+		<span
+			class="taken-label"
+			title={takenAtIsExif ? 'Capture date from photo metadata' : 'No capture date in file — showing upload time'}
+		>{takenAtLabel}{#if !takenAtIsExif}<span class="approx">~</span>{/if}</span>
+	{/if}
 </button>
 
 <style>
+	.taken-label {
+		display: block;
+		padding: 0 6px 5px;
+		font-size: 0.68rem;
+		color: var(--text-muted);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.approx { margin-left: 2px; opacity: 0.7; font-weight: 600; }
+
 	.thumb {
 		background: var(--bg-surface);
 		border: 2px solid var(--border);

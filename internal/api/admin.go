@@ -272,12 +272,26 @@ func (h *Handlers) renderAndQueue(photo *db.Photo) {
 		})
 	}
 
-	// Get text overlays for this orientation
+	// Get text overlays for this orientation. Date-sourced overlays resolve
+	// their content from the photo's capture time (EXIF, else upload time)
+	// at render time rather than storing a baked-in string.
+	takenAt, _ := photo.EffectiveTakenAt()
 	var textParams []imaging.TextParams
 	textOverlays, _ := h.queries.ListTextOverlaysByProjectOrientation(ctx, photo.ProjectID, orientationID)
 	for _, t := range textOverlays {
+		content := imaging.ResolveTextContent(
+			t.Text,
+			imaging.TextSource(t.SourceOrDefault()),
+			imaging.DateFormat(t.DateFormat.String),
+			takenAt,
+		)
+		if content == "" {
+			// Nothing to draw — an empty static overlay, or a date source
+			// with no timestamp at all.
+			continue
+		}
 		textParams = append(textParams, imaging.TextParams{
-			Text:     t.Text,
+			Text:     content,
 			FontPath: t.FontFamily,
 			FontSize: t.FontSize,
 			Color:    t.Color,

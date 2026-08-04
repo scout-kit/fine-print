@@ -185,7 +185,7 @@ export function deleteOverlay(id: number): Promise<{ status: string }> {
 	return request('DELETE', `/admin/overlays/${id}`);
 }
 
-export function createTextOverlay(projectId: number, data: { text: string; font_family?: string; font_size?: number; color?: string; x?: number; y?: number; opacity?: number; orientation_id?: number }): Promise<TextOverlay> {
+export function createTextOverlay(projectId: number, data: { text?: string; font_family?: string; font_size?: number; color?: string; x?: number; y?: number; opacity?: number; orientation_id?: number; source?: TextOverlaySource; date_format?: string }): Promise<TextOverlay> {
 	return request('POST', `/admin/projects/${projectId}/text-overlay`, data);
 }
 
@@ -195,6 +195,14 @@ export function updateTextOverlay(id: number, data: Partial<TextOverlay>): Promi
 
 export function deleteTextOverlay(id: number): Promise<{ status: string }> {
 	return request('DELETE', `/admin/text-overlays/${id}`);
+}
+
+/**
+ * Date presets for the text-overlay picker. Examples are rendered server-side
+ * by the same formatter used for the print, so they can't drift from reality.
+ */
+export function listDateFormats(): Promise<DateFormatsResponse> {
+	return request('GET', '/admin/text-overlays/date-formats');
 }
 
 export function getProject(id: number): Promise<ProjectResponse> {
@@ -407,6 +415,39 @@ export interface Photo {
 	preview_key: string | null;
 	copies: number;
 	created_at: string;
+	original_width: number | null;
+	original_height: number | null;
+	file_size: number | null;
+	mime_type: string | null;
+	/** Capture time to display. Always set — falls back to the upload time. */
+	taken_at: string;
+	/** Which timestamp taken_at actually is: "exif" or "upload". */
+	taken_at_source: TakenAtSource;
+	/** The EXIF timestamp alone, null when the file carried none. */
+	taken_at_exif: string | null;
+	camera_make: string | null;
+	camera_model: string | null;
+	/** Make and model joined for display, de-duplicated. Empty when unknown. */
+	camera_label: string;
+}
+
+export type TakenAtSource = 'exif' | 'upload';
+
+/** Capture metadata for a single photo, for the guest editor. */
+export interface PhotoMetadata {
+	id: number;
+	taken_at: string;
+	taken_at_source: TakenAtSource;
+	camera_label: string;
+	original_width: number | null;
+	original_height: number | null;
+	file_size: number | null;
+	mime_type: string;
+	created_at: string;
+}
+
+export function photoMetadata(id: number): Promise<PhotoMetadata> {
+	return request('GET', `/photos/${id}/metadata`);
 }
 
 export interface Project {
@@ -461,6 +502,7 @@ export interface Overlay {
 export interface TextOverlay {
 	id: number;
 	project_id: number;
+	/** Literal text. Only printed when source is "static". */
 	text: string;
 	font_family: string;
 	font_size: number;
@@ -469,6 +511,34 @@ export interface TextOverlay {
 	y: number;
 	opacity: number;
 	orientation_id: number;
+	/** Where the printed content comes from. */
+	source: TextOverlaySource;
+	/** Date preset key. Empty means the source's default. */
+	date_format: string;
+}
+
+export type TextOverlaySource = 'static' | 'photo_date' | 'photo_datetime';
+
+export const TEXT_SOURCE_STATIC = 'static';
+export const TEXT_SOURCE_PHOTO_DATE = 'photo_date';
+export const TEXT_SOURCE_PHOTO_DATETIME = 'photo_datetime';
+
+/** One date preset, with an example rendered by the backend formatter. */
+export interface DateFormatOption {
+	key: string;
+	example: string;
+	default: boolean;
+}
+
+export interface TextSourceOption {
+	key: TextOverlaySource;
+	label: string;
+	formats: DateFormatOption[];
+}
+
+export interface DateFormatsResponse {
+	sample: string;
+	sources: TextSourceOption[];
 }
 
 export interface ProjectResponse {

@@ -5,9 +5,11 @@
 	import {
 		getProject, uploadOverlay, updateOverlayPosition, deleteOverlay,
 		createTextOverlay, updateTextOverlay, deleteTextOverlay,
-		copyTemplateOrientation, listAvailableFonts,
+		copyTemplateOrientation, listAvailableFonts, listDateFormats,
 		ORIENTATION_LANDSCAPE, ORIENTATION_PORTRAIT,
-		type ProjectResponse, type Overlay, type TextOverlay, type SystemFont
+		TEXT_SOURCE_STATIC, TEXT_SOURCE_PHOTO_DATE, TEXT_SOURCE_PHOTO_DATETIME,
+		type ProjectResponse, type Overlay, type TextOverlay, type SystemFont,
+		type TextSourceOption, type TextOverlaySource, type DateFormatOption
 	} from '$lib/api';
 
 	const projectId = $derived(Number(page.params.id));
@@ -19,7 +21,57 @@
 	let newFontSize = $state(25);
 	let newTextColor = $state('#FFFFFF');
 	let newFontFamily = $state('');
+	let newSource: TextOverlaySource = $state(TEXT_SOURCE_STATIC);
+	let newDateFormat = $state('');
 	let fonts: SystemFont[] = $state([]);
+
+	// Date presets come from the backend so the examples shown here are
+	// rendered by the same formatter that renders the print.
+	let sourceOptions: TextSourceOption[] = $state([]);
+
+	function formatsFor(source: TextOverlaySource): DateFormatOption[] {
+		return sourceOptions.find(s => s.key === source)?.formats ?? [];
+	}
+
+	function defaultFormatFor(source: TextOverlaySource): string {
+		return formatsFor(source).find(f => f.default)?.key ?? '';
+	}
+
+	function sourceLabel(source: TextOverlaySource): string {
+		return sourceOptions.find(s => s.key === source)?.label ?? source;
+	}
+
+	function isDateSource(source: TextOverlaySource | undefined): boolean {
+		return source === TEXT_SOURCE_PHOTO_DATE || source === TEXT_SOURCE_PHOTO_DATETIME;
+	}
+
+	/**
+	 * Example string for a preset key, used for the canvas preview and the
+	 * overlay list. Falls back to the source default when no format is stored.
+	 */
+	function exampleFor(source: TextOverlaySource, formatKey: string): string {
+		const formats = formatsFor(source);
+		return (formats.find(f => f.key === formatKey) ?? formats.find(f => f.default))?.example ?? '';
+	}
+
+	// The canvas has no literal text to draw for a date overlay, so give it the
+	// example rendering instead.
+	function textPreview(t: TextOverlay): string {
+		if (!isDateSource(t.source)) return t.text;
+		return exampleFor(t.source, t.date_format) || t.text;
+	}
+
+	// Switching source resets the format to that source's default, so a
+	// date-only source can never keep a time-bearing preset (the API rejects it).
+	function onNewSourceChange(source: TextOverlaySource) {
+		newSource = source;
+		newDateFormat = defaultFormatFor(source);
+	}
+
+	function onEditSourceChange(id: number, source: TextOverlaySource) {
+		updateTextProp(id, 'source', source);
+		updateTextProp(id, 'date_format', defaultFormatFor(source));
+	}
 
 	let editingOverlayId = $state<number | null>(null);
 	let editingTextId = $state<number | null>(null);
@@ -43,6 +95,7 @@
 	onMount(async () => {
 		load();
 		try { fonts = await listAvailableFonts(); } catch { /* ignore */ }
+		try { sourceOptions = (await listDateFormats()).sources; } catch { /* ignore */ }
 	});
 
 	function refreshEditor() { editorVersion++; }
@@ -118,8 +171,18 @@
 	}
 
 	async function handleAddText() {
-		if (!newText.trim()) return;
-		await createTextOverlay(projectId, { text: newText.trim(), font_family: newFontFamily || undefined, font_size: newFontSize, color: newTextColor, x: 0.5, y: 0.5, opacity: 1.0, orientation_id: orientation });
+		// Date overlays derive their content at print time, so they need no text.
+		if (newSource === TEXT_SOURCE_STATIC && !newText.trim()) return;
+		await createTextOverlay(projectId, {
+			text: newSource === TEXT_SOURCE_STATIC ? newText.trim() : '',
+			font_family: newFontFamily || undefined,
+			font_size: newFontSize,
+			color: newTextColor,
+			x: 0.5, y: 0.5, opacity: 1.0,
+			orientation_id: orientation,
+			source: newSource,
+			date_format: isDateSource(newSource) ? (newDateFormat || defaultFormatFor(newSource)) : undefined
+		});
 		newText = '';
 		load();
 	}
@@ -135,7 +198,7 @@
 	async function saveText(id: number) {
 		const t = getText(id);
 		if (!t) return;
-		await updateTextOverlay(id, { text: t.text, font_family: t.font_family, font_size: t.font_size, color: t.color, x: t.x, y: t.y, opacity: t.opacity });
+		await updateTextOverlay(id, { text: t.text, font_family: t.font_family, font_size: t.font_size, color: t.color, x: t.x, y: t.y, opacity: t.opacity, source: t.source, date_format: t.date_format });
 		editingTextId = null;
 	}
 </script>
@@ -163,6 +226,7 @@
 			<OverlayEditor
 				overlays={filteredOverlays}
 				textOverlays={filteredTextOverlays}
+				{textPreview}
 				{lockAspect}
 				portrait={orientation === ORIENTATION_PORTRAIT}
 				onOverlayUpdate={handleOverlayDrag}
@@ -221,14 +285,40 @@
 		{#each filteredTextOverlays as t (t.id)}
 			<div class="item-card card">
 				<div class="item-header">
-					<span class="item-name" style="color: {t.color};">{t.text}</span>
+					<span class="item-name" style="color: {t.color};">{textPreview(t) || '(empty)'}</span>
+					{#if isDateSource(t.source)}
+						<span class="source-badge">{sourceLabel(t.source)}</span>
+					{/if}
 					<span class="item-meta">{t.font_size}pt</span>
 					{#if editingTextId !== t.id}<button class="ghost sm-btn" onclick={() => startEditText(t.id)}>Edit</button>{/if}
 					<button class="ghost sm-btn danger-text" onclick={() => handleTextDelete(t.id)}>Remove</button>
 				</div>
 				{#if editingTextId === t.id}
 					<div class="edit-inline">
-						<input type="text" value={t.text} oninput={(e) => updateTextProp(t.id, 'text', (e.target as HTMLInputElement).value)} />
+						<label class="font-field">
+							<span>Content</span>
+							<select value={t.source} onchange={(e) => onEditSourceChange(t.id, (e.target as HTMLSelectElement).value as TextOverlaySource)} style="min-height: auto; padding: 4px 8px; font-size: 0.8rem;">
+								{#each sourceOptions as opt}
+									<option value={opt.key}>{opt.label}</option>
+								{/each}
+							</select>
+						</label>
+						{#if isDateSource(t.source)}
+							<label class="font-field">
+								<span>Format</span>
+								<select value={t.date_format || defaultFormatFor(t.source)} onchange={(e) => updateTextProp(t.id, 'date_format', (e.target as HTMLSelectElement).value)} style="min-height: auto; padding: 4px 8px; font-size: 0.8rem;">
+									{#each formatsFor(t.source) as f}
+										<option value={f.key}>{f.example}</option>
+									{/each}
+								</select>
+							</label>
+							<p class="source-hint">
+								Prints the photo's capture date. Photos without a capture date in
+								their metadata fall back to the time they were uploaded.
+							</p>
+						{:else}
+							<input type="text" value={t.text} oninput={(e) => updateTextProp(t.id, 'text', (e.target as HTMLInputElement).value)} />
+						{/if}
 						<label class="font-field">
 							<span>Font</span>
 							<select value={t.font_family || ''} onchange={(e) => updateTextProp(t.id, 'font_family', (e.target as HTMLSelectElement).value)} style="min-height: auto; padding: 4px 8px; font-size: 0.8rem;">
@@ -254,7 +344,34 @@
 			</div>
 		{/each}
 		<form class="add-text-form" onsubmit={(e) => { e.preventDefault(); handleAddText(); }}>
-			<input type="text" placeholder="Text content" bind:value={newText} />
+			<div class="text-options">
+				<label>
+					<span>Content</span>
+					<select value={newSource} onchange={(e) => onNewSourceChange((e.target as HTMLSelectElement).value as TextOverlaySource)} style="min-height: auto; padding: 4px 8px; font-size: 0.8rem; max-width: 220px;">
+						{#each sourceOptions as opt}
+							<option value={opt.key}>{opt.label}</option>
+						{/each}
+					</select>
+				</label>
+				{#if isDateSource(newSource)}
+					<label>
+						<span>Format</span>
+						<select bind:value={newDateFormat} style="min-height: auto; padding: 4px 8px; font-size: 0.8rem; max-width: 220px;">
+							{#each formatsFor(newSource) as f}
+								<option value={f.key}>{f.example}</option>
+							{/each}
+						</select>
+					</label>
+				{/if}
+			</div>
+			{#if isDateSource(newSource)}
+				<p class="source-hint">
+					Prints the photo's capture date. Photos without a capture date in their
+					metadata fall back to the time they were uploaded.
+				</p>
+			{:else}
+				<input type="text" placeholder="Text content" bind:value={newText} />
+			{/if}
 			<div class="text-options">
 				<label>
 					<span>Font</span>
@@ -268,7 +385,7 @@
 				<label><span>Size</span><input type="number" min="8" max="200" bind:value={newFontSize} style="width: 70px;" /></label>
 				<label><span>Color</span><input type="color" bind:value={newTextColor} style="width: 50px; height: 36px; padding: 2px; min-height: auto;" /></label>
 			</div>
-			<button class="primary" type="submit" style="padding: 8px 16px;">Add Text</button>
+			<button class="primary" type="submit" style="padding: 8px 16px;">{isDateSource(newSource) ? 'Add Date' : 'Add Text'}</button>
 		</form>
 	</section>
 {/if}
@@ -308,6 +425,25 @@
 	}
 
 	.section { margin-bottom: 28px; }
+
+	.source-badge {
+		font-size: 0.65rem;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		font-weight: 600;
+		padding: 2px 6px;
+		border-radius: 4px;
+		background: var(--accent);
+		color: #fff;
+		white-space: nowrap;
+	}
+
+	.source-hint {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		margin: 0;
+		line-height: 1.4;
+	}
 	.section h3 { font-size: 1rem; font-weight: 600; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 	.item-card { padding: 12px 16px; margin-bottom: 8px; }
 	.item-header { display: flex; align-items: center; gap: 8px; }
