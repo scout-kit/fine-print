@@ -742,6 +742,9 @@ func (q *Queries) GetNextQueuedJobForPrinter(ctx context.Context, printerName st
 }
 
 // Gallery: list all photos for a project with status names
+// ListGalleryPhotos returns a single project's gallery photos. The caller is
+// responsible for checking that the project may be shown to the requester —
+// see ListPublicGalleryPhotos for the unscoped, visibility-filtered variant.
 func (q *Queries) ListGalleryPhotos(ctx context.Context, projectID uint64) ([]Photo, error) {
 	photos := make([]Photo, 0)
 	err := q.db.SelectContext(ctx, &photos,
@@ -750,11 +753,20 @@ func (q *Queries) ListGalleryPhotos(ctx context.Context, projectID uint64) ([]Ph
 	return photos, err
 }
 
-func (q *Queries) ListAllGalleryPhotos(ctx context.Context) ([]Photo, error) {
+// ListPublicGalleryPhotos returns gallery photos from public projects only.
+//
+// This backs the unscoped guest gallery, so the visibility join is the only
+// thing keeping hidden (link/QR-only) and private projects out of it. It must
+// stay a join rather than a filter applied after the fact — an earlier version
+// selected every photo and leaked both.
+func (q *Queries) ListPublicGalleryPhotos(ctx context.Context) ([]Photo, error) {
 	photos := make([]Photo, 0)
 	err := q.db.SelectContext(ctx, &photos,
-		"SELECT * FROM photos WHERE status_id != ? ORDER BY created_at DESC",
-		PhotoStatusRejected)
+		`SELECT photos.* FROM photos
+		 JOIN projects ON projects.id = photos.project_id
+		 WHERE projects.visibility_id = ? AND photos.status_id != ?
+		 ORDER BY photos.created_at DESC`,
+		VisibilityPublic, PhotoStatusRejected)
 	return photos, err
 }
 
