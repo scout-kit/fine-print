@@ -125,8 +125,9 @@ const (
 // Which edge of the text stays pinned to the overlay's x. Mirrors
 // imaging.TextAlign.
 const (
-	TextAlignLeft  = "left"
-	TextAlignRight = "right"
+	TextAlignLeft   = "left"
+	TextAlignCenter = "center"
+	TextAlignRight  = "right"
 )
 
 type TextOverlay struct {

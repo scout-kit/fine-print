@@ -168,18 +168,77 @@ func TestRenderText_EmptyAlignBehavesAsLeft(t *testing.T) {
 }
 
 func TestTextAlign_Valid(t *testing.T) {
-	for _, a := range []TextAlign{TextAlignLeft, TextAlignRight} {
+	for _, a := range []TextAlign{TextAlignLeft, TextAlignCenter, TextAlignRight} {
 		if !a.Valid() {
 			t.Errorf("%q should be valid", a)
 		}
 	}
-	for _, a := range []TextAlign{"", "center", "LEFT", "start", "justify"} {
+	for _, a := range []TextAlign{"", "LEFT", "Center", "start", "justify", "middle"} {
 		if TextAlign(a).Valid() {
 			t.Errorf("%q should not be valid", a)
 		}
 	}
 	if DefaultTextAlign != TextAlignLeft {
 		t.Errorf("DefaultTextAlign = %q, want left for backward compatibility", DefaultTextAlign)
+	}
+}
+
+// Center-anchored text stays balanced around x: both edges move outward by
+// roughly the same amount as the string lengthens, and the midpoint holds.
+func TestRenderText_CenterAlignPinsMidpoint(t *testing.T) {
+	shortMin, shortMax, ok := inkExtent(renderAt(t, "May 1, 2026", TextAlignCenter, 0.5))
+	if !ok {
+		t.Fatal("short string drew nothing")
+	}
+	longMin, longMax, ok := inkExtent(renderAt(t, "September 30, 2026", TextAlignCenter, 0.5))
+	if !ok {
+		t.Fatal("long string drew nothing")
+	}
+
+	shortMid := (shortMin + shortMax) / 2
+	longMid := (longMin + longMax) / 2
+	// Glyph side bearings differ between the two strings, so allow a little
+	// slack — the point is the midpoint holds rather than the edge sliding.
+	if abs(longMid-shortMid) > 6 {
+		t.Errorf("midpoints differ: short=%d long=%d, want them pinned together", shortMid, longMid)
+	}
+
+	// The extra width must be split between both sides, not all on one.
+	leftGrowth := shortMin - longMin
+	rightGrowth := longMax - shortMax
+	if leftGrowth <= 0 || rightGrowth <= 0 {
+		t.Errorf("growth was one-sided: left=%d right=%d, want both positive",
+			leftGrowth, rightGrowth)
+	}
+}
+
+// Center should land the midpoint at the requested fraction of image width.
+func TestRenderText_CenterAnchorLandsAtRequestedX(t *testing.T) {
+	const width = 1200
+	const frac = 0.5
+	want := int(frac * width)
+
+	minX, maxX, ok := inkExtent(renderAt(t, "September 30, 2026", TextAlignCenter, frac))
+	if !ok {
+		t.Fatal("nothing drawn")
+	}
+	mid := (minX + maxX) / 2
+	if abs(mid-want) > 12 {
+		t.Errorf("midpoint at x=%d, want ~%d", mid, want)
+	}
+}
+
+// Each anchor must place the same string differently — a regression where one
+// case fell through to another would otherwise pass the per-anchor tests.
+func TestRenderText_AnchorsAreDistinct(t *testing.T) {
+	const s = "September 30, 2026"
+	lMin, _, _ := inkExtent(renderAt(t, s, TextAlignLeft, 0.5))
+	cMin, _, _ := inkExtent(renderAt(t, s, TextAlignCenter, 0.5))
+	rMin, _, _ := inkExtent(renderAt(t, s, TextAlignRight, 0.5))
+
+	if !(rMin < cMin && cMin < lMin) {
+		t.Errorf("expected right < center < left for the same x; got right=%d center=%d left=%d",
+			rMin, cMin, lMin)
 	}
 }
 

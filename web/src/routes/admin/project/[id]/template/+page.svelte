@@ -8,7 +8,7 @@
 		copyTemplateOrientation, listAvailableFonts, listDateFormats,
 		ORIENTATION_LANDSCAPE, ORIENTATION_PORTRAIT,
 		TEXT_SOURCE_STATIC, TEXT_SOURCE_PHOTO_DATE, TEXT_SOURCE_PHOTO_DATETIME,
-		TEXT_ALIGN_LEFT, TEXT_ALIGN_RIGHT,
+		TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER, TEXT_ALIGN_RIGHT,
 		type ProjectResponse, type Overlay, type TextOverlay, type SystemFont,
 		type TextSourceOption, type TextOverlaySource, type DateFormatOption,
 		type TextAlign
@@ -51,8 +51,9 @@
 	// x is the anchored edge, so this decides which way the text grows when its
 	// content gets longer.
 	const ALIGN_OPTIONS: { value: TextAlign; label: string; hint: string }[] = [
-		{ value: TEXT_ALIGN_LEFT,  label: 'Left',  hint: 'x is the left edge — text grows right' },
-		{ value: TEXT_ALIGN_RIGHT, label: 'Right', hint: 'x is the right edge — text grows left' }
+		{ value: TEXT_ALIGN_LEFT,   label: 'Left',   hint: 'x is the left edge — text grows right' },
+		{ value: TEXT_ALIGN_CENTER, label: 'Center', hint: 'x is the midpoint — text grows evenly both ways' },
+		{ value: TEXT_ALIGN_RIGHT,  label: 'Right',  hint: 'x is the right edge — text grows left' }
 	];
 
 	function alignHint(align: TextAlign | undefined): string {

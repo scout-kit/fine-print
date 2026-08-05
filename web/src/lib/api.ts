@@ -523,9 +523,10 @@ export interface TextOverlay {
 	text_align: TextAlign;
 }
 
-export type TextAlign = 'left' | 'right';
+export type TextAlign = 'left' | 'center' | 'right';
 
 export const TEXT_ALIGN_LEFT = 'left';
+export const TEXT_ALIGN_CENTER = 'center';
 export const TEXT_ALIGN_RIGHT = 'right';
 
 export type TextOverlaySource = 'static' | 'photo_date' | 'photo_datetime';

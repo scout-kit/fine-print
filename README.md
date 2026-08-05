@@ -143,8 +143,9 @@ formatter that renders the print, so what you see is what gets printed. A date-o
 source only offers date-only presets, and the API rejects a mismatched pair rather
 than silently printing something you didn't choose.
 
-**Anchoring.** A text overlay's stored x is one *edge* of the text, chosen with
-the **Anchor** control: `left` (x is the left edge, text grows rightward) or
+**Anchoring.** A text overlay's stored x is a single *reference point* on the
+text, chosen with the **Anchor** control: `left` (x is the left edge, text grows
+rightward), `center` (x is the midpoint, text grows evenly both ways), or
 `right` (x is the right edge, text grows leftward). This matters for date
 overlays specifically, because the rendered string changes width from photo to
 photo — "May 1, 2026" is much shorter than "September 30, 2026". A left-anchored

@@ -440,10 +440,24 @@ func TestCreateTextOverlay_TextAlignViaHTTP(t *testing.T) {
 		t.Errorf("omitted text_align = %q, want left", created.TextAlign)
 	}
 
+	// Center is accepted too.
+	rec = doJSONWithID(t, h.CreateTextOverlay, "POST", path, project.ID, map[string]any{
+		"text":       "Smile!",
+		"text_align": db.TextAlignCenter,
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("center text_align: status = %d, want 201; body = %s", rec.Code, rec.Body.String())
+	}
+	created.TextAlign = ""
+	json.Unmarshal(rec.Body.Bytes(), &created)
+	if created.TextAlign != db.TextAlignCenter {
+		t.Errorf("text_align = %q, want %q", created.TextAlign, db.TextAlignCenter)
+	}
+
 	// Unknown value rejected.
 	rec = doJSONWithID(t, h.CreateTextOverlay, "POST", path, project.ID, map[string]any{
 		"text":       "Smile!",
-		"text_align": "center",
+		"text_align": "middle",
 	})
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("unknown text_align: status = %d, want 400", rec.Code)

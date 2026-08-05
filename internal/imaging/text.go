@@ -20,6 +20,9 @@ type TextAlign string
 const (
 	// TextAlignLeft pins the left edge to X: the text grows rightward.
 	TextAlignLeft TextAlign = "left"
+	// TextAlignCenter pins the horizontal midpoint to X: the text grows
+	// outward in both directions, staying centred on X.
+	TextAlignCenter TextAlign = "center"
 	// TextAlignRight pins the right edge to X: the text grows leftward.
 	TextAlignRight TextAlign = "right"
 )
@@ -27,7 +30,7 @@ const (
 // Valid reports whether a is an alignment the renderer understands.
 func (a TextAlign) Valid() bool {
 	switch a {
-	case TextAlignLeft, TextAlignRight:
+	case TextAlignLeft, TextAlignCenter, TextAlignRight:
 		return true
 	}
 	return false
@@ -89,11 +92,15 @@ func RenderText(base image.Image, params TextParams) (image.Image, error) {
 
 	textW, textH := dc.MeasureString(params.Text)
 
-	// Shift left by the measured width when the right edge is anchored, so
-	// the text grows leftward and a longer string can't run past X. Measuring
+	// Shift by the measured width so X lands on the requested edge. Measuring
 	// happens after the font is loaded, so the width reflects the real face.
-	if params.Align == TextAlignRight {
+	// Anything unrecognised (including empty) falls through as left, which is
+	// how overlays behaved before alignment existed.
+	switch params.Align {
+	case TextAlignRight:
 		posX -= textW
+	case TextAlignCenter:
+		posX -= textW / 2
 	}
 
 	// DrawString places text at the baseline. Offset Y by the font ascent

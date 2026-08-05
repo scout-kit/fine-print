@@ -19,8 +19,8 @@ func TestNormalizeTextAlign_DefaultsToLeft(t *testing.T) {
 	}
 }
 
-func TestNormalizeTextAlign_AcceptsBothEdges(t *testing.T) {
-	for _, want := range []string{db.TextAlignLeft, db.TextAlignRight} {
+func TestNormalizeTextAlign_AcceptsEveryAnchor(t *testing.T) {
+	for _, want := range []string{db.TextAlignLeft, db.TextAlignCenter, db.TextAlignRight} {
 		got, err := normalizeTextAlign(want)
 		if err != nil {
 			t.Errorf("%q rejected: %v", want, err)
@@ -33,7 +33,7 @@ func TestNormalizeTextAlign_AcceptsBothEdges(t *testing.T) {
 }
 
 func TestNormalizeTextAlign_RejectsUnknown(t *testing.T) {
-	for _, bad := range []string{"center", "Left", "RIGHT", "start", "end", "justify"} {
+	for _, bad := range []string{"Left", "RIGHT", "Center", "start", "end", "justify", "middle"} {
 		if _, err := normalizeTextAlign(bad); err == nil {
 			t.Errorf("align %q should have been rejected", bad)
 		}
@@ -45,6 +45,9 @@ func TestNormalizeTextAlign_RejectsUnknown(t *testing.T) {
 func TestTextAlignConstantsMatchImaging(t *testing.T) {
 	if db.TextAlignLeft != string(imaging.TextAlignLeft) {
 		t.Errorf("db %q != imaging %q", db.TextAlignLeft, imaging.TextAlignLeft)
+	}
+	if db.TextAlignCenter != string(imaging.TextAlignCenter) {
+		t.Errorf("db %q != imaging %q", db.TextAlignCenter, imaging.TextAlignCenter)
 	}
 	if db.TextAlignRight != string(imaging.TextAlignRight) {
 		t.Errorf("db %q != imaging %q", db.TextAlignRight, imaging.TextAlignRight)

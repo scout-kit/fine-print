@@ -725,7 +725,8 @@ func normalizeTextAlign(align string) (string, error) {
 		return db.TextAlignLeft, nil
 	}
 	if !imaging.TextAlign(align).Valid() {
-		return "", fmt.Errorf("text_align must be %q or %q", db.TextAlignLeft, db.TextAlignRight)
+		return "", fmt.Errorf("text_align must be %q, %q or %q",
+			db.TextAlignLeft, db.TextAlignCenter, db.TextAlignRight)
 	}
 	return align, nil
 }
