@@ -77,7 +77,31 @@
 		});
 	}
 
-	async function initCanvas() {
+	/**
+	 * A plain, non-reactive copy of everything the canvas needs to draw.
+	 *
+	 * The sync is async (overlay images load over HTTP), and Svelte stops
+	 * tracking reads after the first await. So every reactive field is read here
+	 * instead, synchronously inside the effect — that read is what registers the
+	 * dependency. Reading only the arrays tracked their identity but none of the
+	 * fields on them, which is why editing size or opacity left the canvas
+	 * stale while dragging still worked.
+	 */
+	type OverlaySnap = {
+		id: number; x: number; y: number;
+		width: number; height: number; opacity: number; locked: boolean;
+	};
+	type TextSnap = {
+		id: number; x: number; y: number; fontSize: number; // as stored, unscaled
+		color: string; opacity: number; cssFont: string;
+		originX: 'left' | 'center' | 'right'; content: string;
+	};
+	type Snapshot = { aspect: number; overlays: OverlaySnap[]; texts: TextSnap[] };
+
+	// Guards against an older in-flight sync finishing after a newer one.
+	let syncSeq = 0;
+
+	async function initCanvas(snap: Snapshot) {
 		if (initialized) return;
 		initialized = true;
 
@@ -86,8 +110,8 @@
 		// Use a fixed width if container isn't laid out yet
 		const containerWidth = containerEl?.clientWidth;
 		cw = Math.min(containerWidth > 10 ? containerWidth : 480, 480);
-		ch = Math.round(cw / ASPECT);
-		syncedAspect = ASPECT;
+		ch = Math.round(cw / snap.aspect);
+		syncedAspect = snap.aspect;
 
 		fabricCanvas = new fabricMod.Canvas(canvasEl, {
 			width: cw,
@@ -97,30 +121,31 @@
 			uniformScaling: false
 		});
 
-		await syncObjects();
+		await syncObjects(snap);
 	}
 
 	/**
-	 * Bring the canvas in line with the current props: update what exists,
-	 * create what's new, drop what's gone. Selection is preserved so tweaking a
-	 * value doesn't deselect the thing being edited.
+	 * Bring the canvas in line with a snapshot: update what exists, create
+	 * what's new, drop what's gone. Selection is preserved so tweaking a value
+	 * doesn't deselect the thing being edited.
 	 */
-	async function syncObjects() {
+	async function syncObjects(snap: Snapshot) {
 		if (!fabricCanvas || !fabricMod) return;
+		const seq = ++syncSeq;
 
 		// Orientation switch changes the canvas shape. Positions are stored
 		// normalized, so re-applying them below repositions everything.
-		if (ASPECT !== syncedAspect) {
-			syncedAspect = ASPECT;
-			ch = Math.round(cw / ASPECT);
+		if (snap.aspect !== syncedAspect) {
+			syncedAspect = snap.aspect;
+			ch = Math.round(cw / snap.aspect);
 			fabricCanvas.setDimensions({ width: cw, height: ch });
 		}
 
 		const activeKey = fabricCanvas.getActiveObject()?._key;
 
 		const wanted = new Set<string>();
-		for (const ov of overlays) wanted.add(overlayKey(ov.id));
-		for (const t of textOverlays) wanted.add(textKey(t.id));
+		for (const ov of snap.overlays) wanted.add(overlayKey(ov.id));
+		for (const t of snap.texts) wanted.add(textKey(t.id));
 
 		// Remove objects whose source is gone (deleted, or filtered out by an
 		// orientation switch).
@@ -131,11 +156,14 @@
 			}
 		}
 
-		for (const ov of overlays) {
+		// Text is synchronous, so apply it before awaiting any image load.
+		for (const t of snap.texts) upsertText(t);
+
+		for (const ov of snap.overlays) {
 			await upsertOverlay(ov);
-		}
-		for (const t of textOverlays) {
-			upsertText(t);
+			// A newer snapshot arrived while an image was loading; it owns the
+			// canvas from here.
+			if (seq !== syncSeq) return;
 		}
 
 		if (activeKey) {
@@ -146,16 +174,13 @@
 		fabricCanvas.requestRenderAll();
 	}
 
-	async function upsertOverlay(ov: Overlay) {
+	async function upsertOverlay(ov: OverlaySnap) {
 		const key = overlayKey(ov.id);
-		const locked = lockAspect[ov.id] !== false;
 
 		const existing = objects.get(key);
 		if (existing) {
-			const pw = ov.width * cw;
-			const ph = ov.height * ch;
-			const scaleX = pw / (existing.width || 1);
-			const scaleY = ph / (existing.height || 1);
+			const scaleX = (ov.width * cw) / (existing.width || 1);
+			const scaleY = (ov.height * ch) / (existing.height || 1);
 			existing.set({
 				left: ov.x * cw,
 				top: ov.y * ch,
@@ -165,7 +190,7 @@
 			});
 			// Handlers read these off the object rather than closing over values
 			// captured at creation, which would go stale as props change.
-			existing._lockAspect = locked;
+			existing._lockAspect = ov.locked;
 			existing._scaleRatio = scaleX > 0 ? scaleY / scaleX : 1;
 			existing.setCoords();
 			return;
@@ -179,10 +204,8 @@
 				{ crossOrigin: 'anonymous' }
 			);
 
-			const pw = ov.width * cw;
-			const ph = ov.height * ch;
-			const initScaleX = pw / (img.width || 1);
-			const initScaleY = ph / (img.height || 1);
+			const initScaleX = (ov.width * cw) / (img.width || 1);
+			const initScaleY = (ov.height * ch) / (img.height || 1);
 
 			img.set({
 				left: ov.x * cw,
@@ -206,7 +229,7 @@
 
 			img._oid = ov.id;
 			img._key = key;
-			img._lockAspect = locked;
+			img._lockAspect = ov.locked;
 			img._scaleRatio = initScaleX > 0 ? initScaleY / initScaleX : 1;
 
 			// Anchor edges captured when scaling starts, so uniform scaling can
@@ -252,18 +275,18 @@
 		}
 	}
 
-	function upsertText(t: TextOverlay) {
+	function upsertText(t: TextSnap) {
 		const key = textKey(t.id);
-		const content = textPreview?.(t) || t.text || ' ';
 		const props = {
-			text: content,
+			text: t.content,
 			left: t.x * cw,
 			top: t.y * ch,
-			fontSize: t.font_size * (cw / 600),
+			// Scaled here, not in the snapshot, so it never depends on cw.
+			fontSize: t.fontSize * (cw / 600),
 			fill: t.color,
 			opacity: t.opacity,
-			fontFamily: cssFontFor(t.font_family),
-			originX: originXFor(t.text_align)
+			fontFamily: t.cssFont,
+			originX: t.originX
 		};
 
 		const existing = objects.get(key);
@@ -273,7 +296,7 @@
 			return;
 		}
 
-		const ft = new fabricMod.FabricText(content, {
+		const ft = new fabricMod.FabricText(t.content, {
 			...props,
 			cornerColor: '#4a9eff',
 			cornerStrokeColor: '#fff',
@@ -336,23 +359,48 @@
 		}
 	}
 
+	/**
+	 * Every reactive read the canvas depends on happens here, synchronously, so
+	 * Svelte registers all of them before the async sync begins.
+	 */
+	function takeSnapshot(): Snapshot {
+		return {
+			aspect: ASPECT,
+			overlays: overlays.map(o => ({
+				id: o.id,
+				x: o.x,
+				y: o.y,
+				width: o.width,
+				height: o.height,
+				opacity: o.opacity,
+				locked: lockAspect[o.id] !== false
+			})),
+			// textPreview reads the overlay's source and date format, so calling
+			// it here keeps those tracked too.
+			texts: textOverlays.map(t => ({
+				id: t.id,
+				x: t.x,
+				y: t.y,
+				fontSize: t.font_size,
+				color: t.color,
+				opacity: t.opacity,
+				cssFont: cssFontFor(t.font_family),
+				originX: originXFor(t.text_align),
+				content: textPreview?.(t) || t.text || ' '
+			}))
+		};
+	}
+
 	onMount(() => {
 		// Small delay to ensure the DOM is fully laid out (needed when
 		// appearing inside a tab that was just switched to)
-		const timer = setTimeout(() => initCanvas(), 50);
+		const timer = setTimeout(() => initCanvas(takeSnapshot()), 50);
 		return () => clearTimeout(timer);
 	});
 
-	// Re-sync whenever the incoming template data or orientation changes. Reads
-	// each dependency up front so Svelte tracks them even though syncObjects is
-	// async.
 	$effect(() => {
-		void overlays;
-		void textOverlays;
-		void lockAspect;
-		void ASPECT;
-		void portrait;
-		if (initialized && fabricCanvas) void syncObjects();
+		const snap = takeSnapshot();
+		if (initialized && fabricCanvas) void syncObjects(snap);
 	});
 
 	onDestroy(() => {
