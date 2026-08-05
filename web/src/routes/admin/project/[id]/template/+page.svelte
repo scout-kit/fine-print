@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import OverlayEditor from '$lib/OverlayEditor.svelte';
+	import NumberStepper from '$lib/NumberStepper.svelte';
 	import {
 		getProject, uploadOverlay, updateOverlayPosition, deleteOverlay,
 		createTextOverlay, updateTextOverlay, deleteTextOverlay,
@@ -16,7 +17,6 @@
 
 	const projectId = $derived(Number(page.params.id));
 	let data: ProjectResponse | null = $state(null);
-	let editorVersion = $state(0);
 	let orientation = $state(ORIENTATION_LANDSCAPE);
 
 	let newText = $state('');
@@ -103,7 +103,6 @@
 	async function load() {
 		try {
 			data = await getProject(projectId);
-			editorVersion++;
 		} catch { data = null; }
 	}
 
@@ -112,8 +111,6 @@
 		try { fonts = await listAvailableFonts(); } catch { /* ignore */ }
 		try { sourceOptions = (await listDateFormats()).sources; } catch { /* ignore */ }
 	});
-
-	function refreshEditor() { editorVersion++; }
 
 	// Overlay handlers
 	async function handleOverlayUpload(e: Event) {
@@ -148,7 +145,7 @@
 	function startEditOverlay(id: number) { editingOverlayId = id; editingTextId = null; }
 	function getOverlay(id: number): Overlay | undefined { return data?.overlays?.find(x => x.id === id); }
 	function isLocked(id: number): boolean { return lockAspect[id] !== false; }
-	function toggleLock(id: number) { lockAspect = { ...lockAspect, [id]: !isLocked(id) }; refreshEditor(); }
+	function toggleLock(id: number) { lockAspect = { ...lockAspect, [id]: !isLocked(id) }; }
 
 	function updateOverlayProp(id: number, prop: 'x' | 'y' | 'width' | 'height' | 'opacity', value: number) {
 		if (!data?.overlays) return;
@@ -157,7 +154,6 @@
 		if (prop === 'width' && isLocked(id) && o.width > 0) { o.height = Math.max(0.01, Math.min(1, o.height * (value / o.width))); }
 		else if (prop === 'height' && isLocked(id) && o.height > 0) { o.width = Math.max(0.01, Math.min(1, o.width * (value / o.height))); }
 		(o as any)[prop] = Math.max(0, Math.min(1, value));
-		refreshEditor();
 	}
 
 	async function saveOverlay(id: number) {
@@ -208,7 +204,7 @@
 	function getText(id: number): TextOverlay | undefined { return data?.text_overlays?.find(x => x.id === id); }
 
 	function updateTextProp(id: number, prop: string, value: string | number) {
-		if (data?.text_overlays) { const t = data.text_overlays.find(x => x.id === id); if (t) { (t as any)[prop] = value; refreshEditor(); } }
+		if (data?.text_overlays) { const t = data.text_overlays.find(x => x.id === id); if (t) { (t as any)[prop] = value; } }
 	}
 
 	async function saveText(id: number) {
@@ -224,10 +220,10 @@
 {:else}
 	<!-- Orientation Tabs -->
 	<div class="orient-tabs">
-		<button class="orient-tab" class:active={orientation === ORIENTATION_LANDSCAPE} onclick={() => { orientation = ORIENTATION_LANDSCAPE; editorVersion++; }}>
+		<button class="orient-tab" class:active={orientation === ORIENTATION_LANDSCAPE} onclick={() => orientation = ORIENTATION_LANDSCAPE}>
 			Landscape
 		</button>
-		<button class="orient-tab" class:active={orientation === ORIENTATION_PORTRAIT} onclick={() => { orientation = ORIENTATION_PORTRAIT; editorVersion++; }}>
+		<button class="orient-tab" class:active={orientation === ORIENTATION_PORTRAIT} onclick={() => orientation = ORIENTATION_PORTRAIT}>
 			Portrait
 		</button>
 		<button class="ghost copy-btn" onclick={handleCopyOrientation}>
@@ -238,17 +234,15 @@
 	<!-- Canvas Preview -->
 	<section class="section">
 		<h3>Preview ({orientation === ORIENTATION_LANDSCAPE ? 'Landscape' : 'Portrait'})</h3>
-		{#key editorVersion}
-			<OverlayEditor
-				overlays={filteredOverlays}
-				textOverlays={filteredTextOverlays}
-				{textPreview}
-				{lockAspect}
-				portrait={orientation === ORIENTATION_PORTRAIT}
-				onOverlayUpdate={handleOverlayDrag}
-				onTextUpdate={handleTextDrag}
-			/>
-		{/key}
+		<OverlayEditor
+			overlays={filteredOverlays}
+			textOverlays={filteredTextOverlays}
+			{textPreview}
+			{lockAspect}
+			portrait={orientation === ORIENTATION_PORTRAIT}
+			onOverlayUpdate={handleOverlayDrag}
+			onTextUpdate={handleTextDrag}
+		/>
 	</section>
 
 	<!-- Image Overlays -->
@@ -267,10 +261,10 @@
 				{#if editingOverlayId === overlay.id}
 					<div class="edit-inline">
 						<div class="transform-grid">
-							<label class="num-field"><span>X %</span><input type="number" min="0" max="100" step="1" value={Math.round(overlay.x * 100)} oninput={(e) => updateOverlayProp(overlay.id, 'x', Number((e.target as HTMLInputElement).value) / 100)} /></label>
-							<label class="num-field"><span>Y %</span><input type="number" min="0" max="100" step="1" value={Math.round(overlay.y * 100)} oninput={(e) => updateOverlayProp(overlay.id, 'y', Number((e.target as HTMLInputElement).value) / 100)} /></label>
-							<label class="num-field"><span>W %</span><input type="number" min="1" max="100" step="1" value={Math.round(overlay.width * 100)} oninput={(e) => updateOverlayProp(overlay.id, 'width', Number((e.target as HTMLInputElement).value) / 100)} /></label>
-							<label class="num-field"><span>H %</span><input type="number" min="1" max="100" step="1" value={Math.round(overlay.height * 100)} oninput={(e) => updateOverlayProp(overlay.id, 'height', Number((e.target as HTMLInputElement).value) / 100)} /></label>
+							<NumberStepper label="X %" min={0} max={100} value={Math.round(overlay.x * 100)} onchange={(v) => updateOverlayProp(overlay.id, 'x', v / 100)} />
+							<NumberStepper label="Y %" min={0} max={100} value={Math.round(overlay.y * 100)} onchange={(v) => updateOverlayProp(overlay.id, 'y', v / 100)} />
+							<NumberStepper label="W %" min={1} max={100} value={Math.round(overlay.width * 100)} onchange={(v) => updateOverlayProp(overlay.id, 'width', v / 100)} />
+							<NumberStepper label="H %" min={1} max={100} value={Math.round(overlay.height * 100)} onchange={(v) => updateOverlayProp(overlay.id, 'height', v / 100)} />
 						</div>
 						<div class="lock-row">
 							<button class="lock-btn" class:locked={isLocked(overlay.id)} onclick={() => toggleLock(overlay.id)}>{isLocked(overlay.id) ? 'Uniform' : 'Free'}</button>
@@ -346,9 +340,9 @@
 							</select>
 						</label>
 						<div class="transform-grid">
-							<label class="num-field"><span>X %</span><input type="number" min="0" max="100" step="1" value={Math.round(t.x * 100)} oninput={(e) => updateTextProp(t.id, 'x', Number((e.target as HTMLInputElement).value) / 100)} /></label>
-							<label class="num-field"><span>Y %</span><input type="number" min="0" max="100" step="1" value={Math.round(t.y * 100)} oninput={(e) => updateTextProp(t.id, 'y', Number((e.target as HTMLInputElement).value) / 100)} /></label>
-							<label class="num-field"><span>Size</span><input type="number" min="8" max="400" step="1" value={t.font_size} oninput={(e) => updateTextProp(t.id, 'font_size', Number((e.target as HTMLInputElement).value))} /></label>
+							<NumberStepper label="X %" min={0} max={100} value={Math.round(t.x * 100)} onchange={(v) => updateTextProp(t.id, 'x', v / 100)} />
+							<NumberStepper label="Y %" min={0} max={100} value={Math.round(t.y * 100)} onchange={(v) => updateTextProp(t.id, 'y', v / 100)} />
+							<NumberStepper label="Size" min={8} max={400} value={t.font_size} onchange={(v) => updateTextProp(t.id, 'font_size', v)} />
 							<label class="num-field"><span>Color</span><input type="color" value={t.color} oninput={(e) => updateTextProp(t.id, 'color', (e.target as HTMLInputElement).value)} style="height: 36px; padding: 2px; min-height: auto;" /></label>
 						</div>
 						<div class="align-row">
@@ -489,9 +483,10 @@
 	}
 
 	.align-btn {
-		padding: 4px 12px;
-		font-size: 0.75rem;
-		min-height: auto;
+		padding: 0 14px;
+		font-size: 0.8rem;
+		min-height: 34px;
+		touch-action: manipulation;
 		background: none;
 		border: 1px solid var(--border);
 		border-radius: 4px;
@@ -518,12 +513,12 @@
 	.danger-text { color: var(--danger); }
 	.edit-inline { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
 	.edit-actions { display: flex; gap: 8px; }
-	.transform-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-	.num-field { display: flex; flex-direction: column; gap: 2px; }
+	.transform-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(116px, 1fr)); gap: 8px; }
+	.num-field { display: flex; flex-direction: column; gap: 3px; }
 	.num-field span { font-size: 0.7rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-	.num-field input { padding: 6px 8px; font-size: 0.8rem; min-height: auto; width: 100%; text-align: center; }
+	.num-field input { padding: 0 4px; font-size: 0.8rem; min-height: 34px; width: 100%; text-align: center; }
 	.lock-row { display: flex; align-items: center; gap: 8px; }
-	.lock-btn { padding: 4px 12px; font-size: 0.75rem; min-height: auto; min-width: auto; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-elevated); color: var(--text-muted); }
+	.lock-btn { padding: 0 14px; font-size: 0.8rem; min-height: 34px; min-width: auto; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-elevated); color: var(--text-muted); touch-action: manipulation; }
 	.lock-btn.locked { border-color: var(--accent); color: var(--accent); background: rgba(74, 158, 255, 0.1); }
 	.lock-hint { font-size: 0.7rem; color: var(--text-muted); }
 	.slider-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
@@ -531,7 +526,7 @@
 	.slider-group input[type="range"] { width: 100%; min-height: auto; padding: 0; border: none; background: transparent; }
 	.snap-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 	.snap-label { font-size: 0.8rem; color: var(--text-muted); }
-	.snap-btn { padding: 4px 10px; font-size: 0.75rem; background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; min-height: auto; min-width: auto; }
+	.snap-btn { padding: 0 14px; font-size: 0.8rem; background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; min-height: 34px; min-width: 44px; touch-action: manipulation; }
 	.snap-btn:hover { border-color: var(--accent); color: var(--accent); }
 	.upload-btn { display: inline-block; padding: 8px 16px; font-size: 0.875rem; cursor: pointer; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-muted); margin-top: 8px; }
 	.font-field { display: flex; flex-direction: column; gap: 2px; }
