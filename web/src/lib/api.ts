@@ -185,7 +185,7 @@ export function deleteOverlay(id: number): Promise<{ status: string }> {
 	return request('DELETE', `/admin/overlays/${id}`);
 }
 
-export function createTextOverlay(projectId: number, data: { text?: string; font_family?: string; font_size?: number; color?: string; x?: number; y?: number; opacity?: number; orientation_id?: number; source?: TextOverlaySource; date_format?: string }): Promise<TextOverlay> {
+export function createTextOverlay(projectId: number, data: { text?: string; font_family?: string; font_size?: number; color?: string; x?: number; y?: number; opacity?: number; orientation_id?: number; source?: TextOverlaySource; date_format?: string; text_align?: TextAlign }): Promise<TextOverlay> {
 	return request('POST', `/admin/projects/${projectId}/text-overlay`, data);
 }
 
@@ -515,7 +515,18 @@ export interface TextOverlay {
 	source: TextOverlaySource;
 	/** Date preset key. Empty means the source's default. */
 	date_format: string;
+	/**
+	 * Which edge of the text sits at x. Date overlays change width with the
+	 * date being printed, so a right-anchored one grows leftward instead of
+	 * running off the edge.
+	 */
+	text_align: TextAlign;
 }
+
+export type TextAlign = 'left' | 'right';
+
+export const TEXT_ALIGN_LEFT = 'left';
+export const TEXT_ALIGN_RIGHT = 'right';
 
 export type TextOverlaySource = 'static' | 'photo_date' | 'photo_datetime';
 

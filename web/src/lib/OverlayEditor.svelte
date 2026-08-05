@@ -154,6 +154,11 @@
 				cssFont = fname;
 			}
 
+			// originX mirrors the stored anchor, so `left` is whichever edge is
+			// pinned. Fabric then reports that same edge back on drag, which
+			// keeps the round trip consistent without any extra conversion.
+			const originX = t.text_align === 'right' ? 'right' : 'left';
+
 			const ft = new fabric.FabricText(textPreview?.(t) || t.text || ' ', {
 				left: t.x * cw,
 				top: t.y * ch,
@@ -165,7 +170,7 @@
 				cornerStrokeColor: '#fff',
 				cornerSize: 14,
 				transparentCorners: false,
-				originX: 'left',
+				originX,
 				originY: 'top',
 				lockRotation: true,
 				lockScalingX: true,

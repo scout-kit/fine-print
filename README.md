@@ -143,6 +143,15 @@ formatter that renders the print, so what you see is what gets printed. A date-o
 source only offers date-only presets, and the API rejects a mismatched pair rather
 than silently printing something you didn't choose.
 
+**Anchoring.** A text overlay's stored x is one *edge* of the text, chosen with
+the **Anchor** control: `left` (x is the left edge, text grows rightward) or
+`right` (x is the right edge, text grows leftward). This matters for date
+overlays specifically, because the rendered string changes width from photo to
+photo — "May 1, 2026" is much shorter than "September 30, 2026". A left-anchored
+date near the right edge of a print will run off it as soon as a longer date
+comes along; anchoring right keeps that edge fixed. Existing overlays are
+left-anchored, which is exactly how they behaved before the option existed.
+
 **Where the date comes from.** On upload, EXIF `DateTimeOriginal` (falling back to
 `DateTimeDigitized` and `DateTime`) is read from the file, along with camera make and
 model. EXIF timestamps have no timezone — they're wall-clock readings — so they are

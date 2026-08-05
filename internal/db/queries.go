@@ -530,10 +530,10 @@ func (q *Queries) DeleteOverlay(ctx context.Context, id uint64) error {
 
 func (q *Queries) CreateTextOverlay(ctx context.Context, t *TextOverlay) error {
 	res, err := q.db.ExecContext(ctx,
-		`INSERT INTO text_overlays (project_id, text, font_family, font_size, color, x, y, opacity, z_order, orientation_id, source, date_format)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO text_overlays (project_id, text, font_family, font_size, color, x, y, opacity, z_order, orientation_id, source, date_format, text_align)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Text, t.FontFamily, t.FontSize, t.Color, t.X, t.Y, t.Opacity, t.ZOrder, t.OrientationID,
-		t.SourceOrDefault(), t.DateFormat,
+		t.SourceOrDefault(), t.DateFormat, t.AlignOrDefault(),
 	)
 	if err != nil {
 		return err
@@ -573,9 +573,9 @@ func (q *Queries) ListTextOverlaysByProjectOrientation(ctx context.Context, proj
 func (q *Queries) UpdateTextOverlay(ctx context.Context, t *TextOverlay) error {
 	_, err := q.db.ExecContext(ctx,
 		`UPDATE text_overlays SET text = ?, font_family = ?, font_size = ?, color = ?,
-		 x = ?, y = ?, opacity = ?, z_order = ?, source = ?, date_format = ? WHERE id = ?`,
+		 x = ?, y = ?, opacity = ?, z_order = ?, source = ?, date_format = ?, text_align = ? WHERE id = ?`,
 		t.Text, t.FontFamily, t.FontSize, t.Color, t.X, t.Y, t.Opacity, t.ZOrder,
-		t.SourceOrDefault(), t.DateFormat, t.ID)
+		t.SourceOrDefault(), t.DateFormat, t.AlignOrDefault(), t.ID)
 	return err
 }
 

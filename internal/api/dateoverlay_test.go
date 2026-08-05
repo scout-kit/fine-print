@@ -352,3 +352,100 @@ func TestPhotoJSON_ExposesCaptureMetadata(t *testing.T) {
 		t.Errorf("taken_at_exif should be null, got %q", *noEXIF.TakenAtEXIF)
 	}
 }
+
+// The anchor edge must survive the round trip, and a row written before the
+// column existed must read back as left rather than as an empty string the
+// renderer wouldn't understand.
+func TestTextOverlay_AlignRoundTrip(t *testing.T) {
+	_, q := newTestHandlers(t)
+	ctx := context.Background()
+	project := newProject(t, q)
+
+	right := &db.TextOverlay{
+		ProjectID: project.ID, Text: "", FontSize: 30, Color: "#FFFFFF", Opacity: 1,
+		OrientationID: db.OrientationLandscape,
+		Source:        db.TextSourcePhotoDate,
+		TextAlign:     db.TextAlignRight,
+	}
+	if err := q.CreateTextOverlay(ctx, right); err != nil {
+		t.Fatalf("creating right-anchored overlay: %v", err)
+	}
+	got, err := q.GetTextOverlay(ctx, right.ID)
+	if err != nil || got == nil {
+		t.Fatalf("reading back: %v", err)
+	}
+	if got.TextAlign != db.TextAlignRight {
+		t.Errorf("text_align = %q, want %q", got.TextAlign, db.TextAlignRight)
+	}
+
+	// Updating an unrelated field must not lose the anchor.
+	got.FontSize = 44
+	if err := q.UpdateTextOverlay(ctx, got); err != nil {
+		t.Fatalf("updating: %v", err)
+	}
+	after, _ := q.GetTextOverlay(ctx, right.ID)
+	if after.TextAlign != db.TextAlignRight {
+		t.Errorf("after update text_align = %q, want preserved", after.TextAlign)
+	}
+
+	// An overlay created without an explicit anchor defaults to left.
+	plain := &db.TextOverlay{
+		ProjectID: project.ID, Text: "Smile!", FontSize: 25, Color: "#FFFFFF", Opacity: 1,
+		OrientationID: db.OrientationLandscape,
+	}
+	if err := q.CreateTextOverlay(ctx, plain); err != nil {
+		t.Fatalf("creating default overlay: %v", err)
+	}
+	plainBack, _ := q.GetTextOverlay(ctx, plain.ID)
+	if plainBack.AlignOrDefault() != db.TextAlignLeft {
+		t.Errorf("default align = %q, want left", plainBack.AlignOrDefault())
+	}
+}
+
+// Alignment goes through the HTTP layer, and a bad value is rejected rather
+// than silently stored as something the renderer will ignore.
+func TestCreateTextOverlay_TextAlignViaHTTP(t *testing.T) {
+	h, q := newTestHandlers(t)
+	project := newProject(t, q)
+	path := "/api/admin/projects/" + itoa(project.ID) + "/text-overlay"
+
+	rec := doJSONWithID(t, h.CreateTextOverlay, "POST", path, project.ID, map[string]any{
+		"source":     db.TextSourcePhotoDate,
+		"text_align": db.TextAlignRight,
+		"font_size":  24,
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body = %s", rec.Code, rec.Body.String())
+	}
+	var created struct {
+		TextAlign string `json:"text_align"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if created.TextAlign != db.TextAlignRight {
+		t.Errorf("text_align = %q, want %q", created.TextAlign, db.TextAlignRight)
+	}
+
+	// Omitted → left, matching prior behavior.
+	rec = doJSONWithID(t, h.CreateTextOverlay, "POST", path, project.ID, map[string]any{
+		"text": "Smile!",
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body = %s", rec.Code, rec.Body.String())
+	}
+	created.TextAlign = ""
+	json.Unmarshal(rec.Body.Bytes(), &created)
+	if created.TextAlign != db.TextAlignLeft {
+		t.Errorf("omitted text_align = %q, want left", created.TextAlign)
+	}
+
+	// Unknown value rejected.
+	rec = doJSONWithID(t, h.CreateTextOverlay, "POST", path, project.ID, map[string]any{
+		"text":       "Smile!",
+		"text_align": "center",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("unknown text_align: status = %d, want 400", rec.Code)
+	}
+}

@@ -298,6 +298,7 @@ func (h *Handlers) renderAndQueue(photo *db.Photo) {
 			X:        t.X,
 			Y:        t.Y,
 			Opacity:  t.Opacity,
+			Align:    imaging.TextAlign(t.AlignOrDefault()),
 		})
 	}
 
