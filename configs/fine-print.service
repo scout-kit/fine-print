@@ -4,11 +4,15 @@ After=network.target cups.service
 Wants=cups.service
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
 ExecStart=/usr/local/bin/fine-print -config /etc/fine-print/config.yml
 WorkingDirectory=/var/lib/fine-print
 Restart=always
 RestartSec=5
+# Kill the process if the watchdog hasn't been pinged in 60s. The app
+# sends WATCHDOG=1 at half this interval on its own.
+WatchdogSec=60
 User=root
 AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_ADMIN CAP_NET_RAW
 

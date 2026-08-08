@@ -86,6 +86,36 @@ That runs `scripts/install.sh`, which in turn:
 
 On first boot, visit the kiosk URL in a browser — you'll be redirected to `/setup`, a one-time wizard that captures the admin password, hotspot SSID/password (both optional), and printer choice. The wizard refuses to run a second time once submitted.
 
+## Operations
+
+### Health checks
+
+- `GET /healthz` — liveness. Always 200 when the process is running.
+- `GET /readyz` — readiness. Returns 503 when the DB is unreachable or disk free space is below the hard guard threshold.
+
+### systemd watchdog
+
+`configs/fine-print.service` uses `Type=notify` with `WatchdogSec=60`. The app sends `READY=1` at startup and pings `WATCHDOG=1` every 30 s. If the process hangs past the watchdog interval, systemd kills and restarts it (`Restart=always`).
+
+### Disk-space guard
+
+A minimum-free threshold (default 2 GiB, admin-editable in Settings) protects the data volume:
+
+- Uploads are refused with **507 Insufficient Storage** once free space falls below the threshold.
+- A persistent banner appears in the admin UI when used space crosses 90%, and escalates to a critical style when uploads are blocked.
+- `/readyz` fails while the guard is tripped so external monitoring can react.
+
+### Backup & restore
+
+From **Admin → Settings → Backup & Restore**:
+
+- **Download** produces a `.tar.gz` containing a consistent SQLite snapshot (via `VACUUM INTO`), original uploads, overlays, and fonts. Rendered/preview images are excluded — they regenerate on demand.
+- **Restore** accepts a previously downloaded backup. The existing DB and directories are moved aside as `.bak-STAMP` files before the new ones are swapped in; a service restart is required afterwards.
+
+### Printer monitoring
+
+A background poller (default every 30 s, admin-editable) verifies the configured printer is still listed by CUPS. On disconnect it **pauses the queue** and emits an SSE alert; on reconnect it emits a reconnect event but leaves the queue paused so the admin can confirm paper/ink before resuming.
+
 ## Configuration
 
 Config is layered: **defaults → YAML file → DB (admin UI) → env vars → CLI flags**. The YAML

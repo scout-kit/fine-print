@@ -39,14 +39,19 @@ export function createSSE(url: string): SSEConnection {
 	for (const type of [
 		'connected', 'photo_status', 'print_status',
 		'print_error', 'queue_paused', 'queue_resumed', 'new_photo',
-		'settings_changed', 'restarting'
+		'settings_changed', 'restarting',
+		'printer_disconnected', 'printer_reconnected'
 	]) {
 		source.addEventListener(type, (e: MessageEvent) => {
 			try {
 				const event: SSEEvent = JSON.parse(e.data);
 				state.update(s => {
 					const updated: SSEState = { ...s, lastEvent: event };
-					if (type === 'print_error' || type === 'queue_paused') {
+					if (
+						type === 'print_error' ||
+						type === 'queue_paused' ||
+						type === 'printer_disconnected'
+					) {
 						updated.alert = event;
 					}
 					return updated;

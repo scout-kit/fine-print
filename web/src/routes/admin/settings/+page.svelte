@@ -4,7 +4,9 @@
 		getSettings, updateSettings, changeAdminPassword, restartService,
 		listPrinters, syncPrinters, updatePrinterEnabled, getPrinterSettings, updatePrinterMode,
 		listFonts, uploadFont, deleteFont,
-		type SettingField, type PrinterInfo, type PrinterAssignment, type Font
+		getStorage, backupDownloadURL, restoreBackup,
+		type SettingField, type PrinterInfo, type PrinterAssignment, type Font,
+		type DiskUsage
 	} from '$lib/api';
 	import { createSSE, type SSEConnection } from '$lib/sse';
 
@@ -25,7 +27,9 @@
 		ImagingPreviewW:    'imaging_preview_max_width',
 		ImagingPrintWidth:  'imaging_print_width',
 		ImagingPrintHeight: 'imaging_print_height',
-		ImagingJPEGQuality: 'imaging_jpeg_quality'
+		ImagingJPEGQuality: 'imaging_jpeg_quality',
+		DiskGuardMinFreeBytes:      'diskguard_min_free_bytes',
+		PrinterMonitorIntervalSecs: 'printer_monitor_interval_seconds'
 	} as const;
 
 	let fields: Record<string, SettingField> = $state({});
@@ -52,6 +56,38 @@
 
 	let sse: SSEConnection | null = null;
 
+	// Storage + backup
+	let storage: DiskUsage | null = $state(null);
+	let restoreFile: File | null = $state(null);
+	let restoring = $state(false);
+	let restoreMsg = $state('');
+
+	async function loadStorage() {
+		try {
+			const s = await getStorage();
+			storage = s.enabled ? (s.usage ?? null) : null;
+		} catch { /* ignore */ }
+	}
+
+	function bytesToGB(n: number): string {
+		return (n / 1024 / 1024 / 1024).toFixed(2);
+	}
+
+	async function handleRestore() {
+		if (!restoreFile) return;
+		if (!confirm('Restore will replace the current database and photos. Existing data is moved aside as .bak files. Continue?')) return;
+		restoring = true;
+		restoreMsg = '';
+		try {
+			const r = await restoreBackup(restoreFile);
+			restoreMsg = r.message || 'Restore complete.';
+			if (r.requires_restart) restartPending = true;
+		} catch (e) {
+			restoreMsg = e instanceof Error ? e.message : 'Restore failed';
+		}
+		restoring = false;
+	}
+
 	async function loadSettings() {
 		try {
 			const res = await getSettings();
@@ -66,6 +102,7 @@
 
 	async function load() {
 		await loadSettings();
+		await loadStorage();
 		try { printers = await listPrinters(); } catch { /* CUPS may not be available */ }
 		try {
 			const ps = await getPrinterSettings();
@@ -364,6 +401,20 @@
 	</label>
 </section>
 
+<section class="settings-section">
+	<h3>Reliability</h3>
+
+	<label class="field">
+		<span>Disk-space floor (bytes). Uploads are refused below this. Default 2 GB.</span>
+		<input type="number" min="0" value={fieldValue(K.DiskGuardMinFreeBytes)} oninput={(e) => setField(K.DiskGuardMinFreeBytes, (e.currentTarget as HTMLInputElement).value)} placeholder="2147483648" />
+	</label>
+
+	<label class="field">
+		<span>Printer check interval (seconds) <span class="restart-tag">restart required</span></span>
+		<input type="number" min="5" max="3600" value={fieldValue(K.PrinterMonitorIntervalSecs)} oninput={(e) => setField(K.PrinterMonitorIntervalSecs, (e.currentTarget as HTMLInputElement).value)} placeholder="30" />
+	</label>
+</section>
+
 <button class="primary save-btn" onclick={handleSave} disabled={saving || !dirty()}>
 	{saving ? 'Saving…' : dirty() ? 'Save Settings' : 'No unsaved changes'}
 </button>
@@ -392,6 +443,49 @@
 	<button class="primary" onclick={handlePasswordSave} disabled={pwSaving || !pwCurrent || !pwNew}>
 		{pwSaving ? 'Updating…' : 'Change Password'}
 	</button>
+</section>
+
+<section class="settings-section">
+	<h3>Storage</h3>
+
+	{#if storage}
+		<div class="storage-summary" class:warn={storage.warn_active} class:critical={!storage.above_min_free}>
+			<div class="usage-bar" style="--frac: {storage.used_fraction * 100}%"></div>
+			<div class="usage-text">
+				<strong>{(storage.used_fraction * 100).toFixed(0)}% used</strong>
+				— {bytesToGB(storage.used_bytes)} GB of {bytesToGB(storage.total_bytes)} GB,
+				{bytesToGB(storage.free_bytes)} GB free
+			</div>
+			{#if storage.message}
+				<div class="usage-message">{storage.message}</div>
+			{/if}
+		</div>
+	{:else}
+		<p class="hint">Storage stats unavailable.</p>
+	{/if}
+</section>
+
+<section class="settings-section">
+	<h3>Backup &amp; Restore</h3>
+	<p class="hint">
+		Backup contains the database plus original uploads, overlays, and fonts.
+		Rendered/preview files are excluded — they regenerate automatically.
+	</p>
+
+	<a class="primary download-link" href={backupDownloadURL()} download>
+		Download backup (.tar.gz)
+	</a>
+
+	<label class="field restore-field">
+		<span>Restore from backup file</span>
+		<input type="file" accept=".tar.gz,.tgz,application/gzip" onchange={(e) => { restoreFile = (e.currentTarget as HTMLInputElement).files?.[0] ?? null; }} />
+	</label>
+	<button class="primary" onclick={handleRestore} disabled={!restoreFile || restoring}>
+		{restoring ? 'Restoring…' : 'Restore'}
+	</button>
+	{#if restoreMsg}
+		<div class="alert {restoreMsg.toLowerCase().includes('fail') ? 'error' : 'success'}">{restoreMsg}</div>
+	{/if}
 </section>
 
 <style>
@@ -540,5 +634,68 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
 		color: var(--text-muted);
+	}
+
+	.storage-summary {
+		padding: 12px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--bg-surface);
+	}
+
+	.storage-summary.warn {
+		border-color: var(--warning, #c88c00);
+		background: var(--warning-bg, rgba(200, 140, 0, 0.08));
+	}
+
+	.storage-summary.critical {
+		border-color: var(--danger, #c83c3c);
+		background: var(--danger-bg, rgba(200, 60, 60, 0.08));
+	}
+
+	.usage-bar {
+		height: 8px;
+		background: var(--border);
+		border-radius: 4px;
+		position: relative;
+		overflow: hidden;
+		margin-bottom: 8px;
+	}
+
+	.usage-bar::before {
+		content: "";
+		position: absolute;
+		inset: 0;
+		width: var(--frac);
+		background: var(--accent);
+	}
+
+	.storage-summary.warn .usage-bar::before {
+		background: var(--warning, #c88c00);
+	}
+
+	.storage-summary.critical .usage-bar::before {
+		background: var(--danger, #c83c3c);
+	}
+
+	.usage-text {
+		font-size: 0.85rem;
+	}
+
+	.usage-message {
+		margin-top: 8px;
+		font-size: 0.8rem;
+		color: var(--text-muted);
+	}
+
+	.download-link {
+		display: inline-block;
+		text-decoration: none;
+		text-align: center;
+		margin-bottom: 12px;
+	}
+
+	.restore-field input[type="file"] {
+		padding: 6px 0;
 	}
 </style>

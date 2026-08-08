@@ -19,6 +19,13 @@ func NewQueries(db *sqlx.DB) *Queries {
 	return &Queries{db: db}
 }
 
+// ExecDirect runs a raw SQL statement — only meant for maintenance
+// operations that don't fit the query-per-method pattern (e.g. SQLite's
+// `VACUUM INTO` during backup). Prefer a typed method for everything else.
+func (q *Queries) ExecDirect(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return q.db.ExecContext(ctx, query, args...)
+}
+
 // Settings
 
 func (q *Queries) GetSetting(ctx context.Context, key string) (string, error) {

@@ -596,6 +596,14 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		if settings.RequiresRestart(key) {
 			anyRequiresRestart = true
 		}
+
+		// Push hot-reload values into their live consumers so the admin
+		// doesn't have to restart for "hot" settings to take effect.
+		if key == settings.KeyDiskGuardMinFreeBytes && h.diskGuard != nil {
+			if n, perr := strconv.ParseInt(value, 10, 64); perr == nil {
+				h.diskGuard.SetMinFreeBytes(n)
+			}
+		}
 	}
 
 	h.broadcastAdmin("settings_changed", map[string]any{"keys": changed})
@@ -685,6 +693,16 @@ func validateSettingValue(key, value string) error {
 	case settings.KeyPrinterMedia:
 		if value != "4x6" && value != "Postcard" {
 			return fmt.Errorf("%s must be '4x6' or 'Postcard'", key)
+		}
+	case settings.KeyDiskGuardMinFreeBytes:
+		n, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || n <= 0 {
+			return fmt.Errorf("%s must be a positive integer (bytes)", key)
+		}
+	case settings.KeyPrinterMonitorIntervalSecs:
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 5 || n > 3600 {
+			return fmt.Errorf("%s must be between 5 and 3600 seconds", key)
 		}
 	}
 	return nil
