@@ -13,7 +13,7 @@ hotspot:
   enabled: true
   ssid: "Fine Print"
   password: ""                 # Empty = open network
-  interface: "en0"
+  # interface: "wlan0"         # Uncomment to override. Default: wlan0 on Linux, en0 on macOS.
   subnet: "192.168.69.0/24"
   gateway: "192.168.69.1"
 

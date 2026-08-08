@@ -11,10 +11,10 @@ import (
 // look up the "which printer should be connected?" answer (which may
 // change at runtime from the settings UI).
 type MonitorConfig struct {
-	Interval      time.Duration
-	ExpectedName  func() string               // called every tick — empty string = no printer configured
-	Broadcast     func(eventType string, data any)
-	Queue         queuePauser
+	Interval     time.Duration
+	ExpectedName func() string // called every tick — empty string = no printer configured
+	Broadcast    func(eventType string, data any)
+	Queue        queuePauser
 }
 
 // queuePauser is the subset of QueueManager the monitor uses. Keeping it
@@ -96,10 +96,21 @@ func (m *Monitor) tick() {
 	m.known = true
 	m.mu.Unlock()
 
+	// A printer that is already missing at startup produces no transition on
+	// any later tick (prev and now are both false forever), so the first tick
+	// has to report it or it's never reported at all. Only the already-down
+	// case is announced — a healthy printer at boot stays quiet.
 	if firstTick {
-		// Initial state — don't broadcast; if the printer is already down
-		// we'll catch it via the next tick's transition or the admin can
-		// look at /api/admin/printers directly.
+		if !nowConnected {
+			log.Printf("printer monitor: %q not found at startup — pausing queue", expected)
+			if m.cfg.Queue != nil && !m.cfg.Queue.IsPaused() {
+				m.cfg.Queue.Pause()
+			}
+			m.cfg.Broadcast("printer_disconnected", map[string]any{
+				"printer": expected,
+				"message": "Printer was not found at startup. Queue paused.",
+			})
+		}
 		return
 	}
 

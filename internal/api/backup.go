@@ -51,32 +51,46 @@ func (h *Handlers) BackupDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/gzip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 
+	// The archive is streamed rather than buffered — originals can run to
+	// gigabytes and this box is tight enough on space to ship a disk guard,
+	// so staging a full copy is not an option.
+	//
+	// The consequence is that 200 and the headers are committed before the
+	// first failure can occur, and neither tar/gzip Close is deferred: those
+	// writers emit a valid end-of-archive marker, which would dress a
+	// half-written backup up as a complete one. On failure we abort the
+	// response instead, so the client sees a truncated transfer and a
+	// corrupt archive rather than a silent partial success.
 	gz := gzip.NewWriter(w)
-	defer gz.Close()
 	tw := tar.NewWriter(gz)
-	defer tw.Close()
 
-	if err := addFileToTar(tw, tmpDBPath, "fine-print.db"); err != nil {
-		log.Printf("backup: tar db: %v", err)
-		return
-	}
-
-	// Originals — iterate the storage bucket and add each file.
-	originalsDir := h.store.Path(storage.BucketOriginals, "")
-	if err := addDirToTar(tw, originalsDir, "originals"); err != nil {
-		log.Printf("backup: tar originals: %v", err)
-	}
-
-	// Overlays — used in project templates, can't be regenerated.
-	overlaysDir := h.store.Path(storage.BucketOverlays, "")
-	if err := addDirToTar(tw, overlaysDir, "overlays"); err != nil {
-		log.Printf("backup: tar overlays: %v", err)
-	}
-
-	// Fonts — same reasoning as overlays.
-	fontsDir := h.store.Path(storage.BucketFonts, "")
-	if err := addDirToTar(tw, fontsDir, "fonts"); err != nil {
-		log.Printf("backup: tar fonts: %v", err)
+	if err := func() error {
+		if err := addFileToTar(tw, tmpDBPath, "fine-print.db"); err != nil {
+			return fmt.Errorf("db snapshot: %w", err)
+		}
+		// Originals — iterate the storage bucket and add each file.
+		if err := addDirToTar(tw, h.store.Path(storage.BucketOriginals, ""), "originals"); err != nil {
+			return fmt.Errorf("originals: %w", err)
+		}
+		// Overlays — used in project templates, can't be regenerated.
+		if err := addDirToTar(tw, h.store.Path(storage.BucketOverlays, ""), "overlays"); err != nil {
+			return fmt.Errorf("overlays: %w", err)
+		}
+		// Fonts — same reasoning as overlays.
+		if err := addDirToTar(tw, h.store.Path(storage.BucketFonts, ""), "fonts"); err != nil {
+			return fmt.Errorf("fonts: %w", err)
+		}
+		// Only a clean finish gets the end-of-archive marker.
+		if err := tw.Close(); err != nil {
+			return fmt.Errorf("finalizing tar: %w", err)
+		}
+		return gz.Close()
+	}(); err != nil {
+		log.Printf("backup: aborting partial archive: %v", err)
+		// Deliberately no tw.Close()/gz.Close() here. ErrAbortHandler makes
+		// net/http drop the connection without logging a stack trace, which
+		// is the only way to signal failure once the status line is out.
+		panic(http.ErrAbortHandler)
 	}
 }
 
@@ -131,9 +145,11 @@ func (h *Handlers) BackupRestore(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "corrupt tar: "+err.Error())
 			return
 		}
-		// Guard against path traversal (".." or absolute paths).
+		// Guard against path traversal (".." or absolute paths). Matching on
+		// a bare ".." prefix would also reject legitimate names like
+		// "..config", so test for the path element itself.
 		name := filepath.Clean(hdr.Name)
-		if strings.HasPrefix(name, "..") || filepath.IsAbs(name) {
+		if name == ".." || strings.HasPrefix(name, ".."+string(filepath.Separator)) || filepath.IsAbs(name) {
 			writeError(w, http.StatusBadRequest, "unsafe path in archive: "+hdr.Name)
 			return
 		}
@@ -177,10 +193,35 @@ func (h *Handlers) BackupRestore(w http.ResponseWriter, r *http.Request) {
 	// Swap time — move old data aside, promote staging into place.
 	stamp := time.Now().UTC().Format("20060102-150405")
 
+	// Drain the WAL into the current database first, so the copy we're about
+	// to move aside is a complete, self-contained file someone can roll back
+	// to. Best-effort: a busy checkpoint shouldn't block the restore.
+	if _, err := h.queries.ExecDirect(r.Context(), "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		log.Printf("restore: pre-swap checkpoint failed (rollback copy may be incomplete): %v", err)
+	}
+
 	// DB
 	if err := swapFile(h.cfg.Database.SQLitePath, filepath.Join(staging, "fine-print.db"), stamp); err != nil {
 		writeError(w, http.StatusInternalServerError, "swap db: "+err.Error())
 		return
+	}
+	// The database runs in WAL mode, so the live DB has -wal/-shm sidecars
+	// holding frames that belong to the database we just moved aside. The
+	// snapshot in the archive is a VACUUM'd standalone file with no WAL, so
+	// leaving the old sidecars next to it would let SQLite replay foreign
+	// frames over the restored data. Move them aside with the same stamp so
+	// the restored DB is opened clean (and the old set stays recoverable).
+	for _, suffix := range []string{"-wal", "-shm"} {
+		sidecar := h.cfg.Database.SQLitePath + suffix
+		if _, err := os.Stat(sidecar); err != nil {
+			continue
+		}
+		if err := os.Rename(sidecar, fmt.Sprintf("%s.bak-%s", sidecar, stamp)); err != nil {
+			// Refuse to leave a half-restored DB behind a stale WAL.
+			writeError(w, http.StatusInternalServerError,
+				fmt.Sprintf("failed to clear stale %s sidecar: %v", suffix, err))
+			return
+		}
 	}
 	// Buckets — best-effort; absence is fine (an event with no uploads).
 	for _, sub := range []string{"originals", "overlays", "fonts"} {

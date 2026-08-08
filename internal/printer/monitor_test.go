@@ -117,6 +117,96 @@ func TestMonitor_PausesAndAlertsOnDisconnect(t *testing.T) {
 	}
 }
 
+// A printer that is already absent when the service starts yields no
+// transition on any later tick (prev and now are both false forever), so if
+// the first tick stays silent the queue is never paused and nothing is ever
+// reported. The disconnect has to be announced on that first tick.
+func TestMonitor_ReportsPrinterMissingAtStartup(t *testing.T) {
+	stub := &stubPrinter{printers: nil} // configured printer never shows up
+	queue := &stubQueue{}
+	var events []event
+	var eventMu sync.Mutex
+
+	m := printer.NewMonitor(stub, printer.MonitorConfig{
+		Interval:     10 * time.Millisecond,
+		ExpectedName: func() string { return "Selphy" },
+		Broadcast: func(typ string, data any) {
+			eventMu.Lock()
+			defer eventMu.Unlock()
+			events = append(events, event{typ, data})
+		},
+		Queue: queue,
+	})
+
+	ctx, cancel := timeoutCtx(t, 200*time.Millisecond)
+	defer cancel()
+	done := make(chan struct{})
+	go func() { m.Run(ctx); close(done) }()
+
+	// Several ticks pass with the printer still absent.
+	time.Sleep(60 * time.Millisecond)
+	cancel()
+	<-done
+
+	if !queue.IsPaused() {
+		t.Error("queue should be paused when the configured printer is missing at startup")
+	}
+
+	eventMu.Lock()
+	defer eventMu.Unlock()
+
+	disconnects := 0
+	for _, e := range events {
+		if e.typ == "printer_disconnected" {
+			disconnects++
+		}
+	}
+	if disconnects == 0 {
+		t.Fatal("expected a printer_disconnected event for a printer absent at startup")
+	}
+	// Announced once, not re-broadcast on every subsequent tick.
+	if disconnects > 1 {
+		t.Errorf("got %d printer_disconnected events, want exactly 1", disconnects)
+	}
+}
+
+// A healthy printer at startup should stay quiet — no spurious events.
+func TestMonitor_SilentWhenPrinterPresentAtStartup(t *testing.T) {
+	stub := &stubPrinter{printers: []printer.PrinterInfo{{Name: "Selphy"}}}
+	queue := &stubQueue{}
+	var events []event
+	var eventMu sync.Mutex
+
+	m := printer.NewMonitor(stub, printer.MonitorConfig{
+		Interval:     10 * time.Millisecond,
+		ExpectedName: func() string { return "Selphy" },
+		Broadcast: func(typ string, data any) {
+			eventMu.Lock()
+			defer eventMu.Unlock()
+			events = append(events, event{typ, data})
+		},
+		Queue: queue,
+	})
+
+	ctx, cancel := timeoutCtx(t, 200*time.Millisecond)
+	defer cancel()
+	done := make(chan struct{})
+	go func() { m.Run(ctx); close(done) }()
+
+	time.Sleep(60 * time.Millisecond)
+	cancel()
+	<-done
+
+	if queue.IsPaused() {
+		t.Error("queue should not be paused when the printer is present")
+	}
+	eventMu.Lock()
+	defer eventMu.Unlock()
+	if len(events) != 0 {
+		t.Errorf("expected no events for a healthy printer, got %v", events)
+	}
+}
+
 func TestMonitor_NoExpectedNameIsNoop(t *testing.T) {
 	stub := &stubPrinter{printers: nil}
 	queue := &stubQueue{}

@@ -110,7 +110,7 @@ func TestCompleteSetup_WritesBcryptHashAndSettings(t *testing.T) {
 	}
 
 	// Password is bcrypted, not stored plaintext.
-	hash, _ := q.GetSetting(context.Background(),settings.KeyAdminPasswordHash)
+	hash, _ := q.GetSetting(context.Background(), settings.KeyAdminPasswordHash)
 	if hash == "hunter2" || hash == "" {
 		t.Fatalf("admin password not hashed: got %q", hash)
 	}
@@ -119,10 +119,10 @@ func TestCompleteSetup_WritesBcryptHashAndSettings(t *testing.T) {
 	}
 
 	// Non-empty settings persisted.
-	if ssid, _ := q.GetSetting(context.Background(),settings.KeyHotspotSSID); ssid != "EventWiFi" {
+	if ssid, _ := q.GetSetting(context.Background(), settings.KeyHotspotSSID); ssid != "EventWiFi" {
 		t.Errorf("hotspot_ssid: got %q, want EventWiFi", ssid)
 	}
-	if name, _ := q.GetSetting(context.Background(),settings.KeyPrinterName); name != "Selphy_CP1500" {
+	if name, _ := q.GetSetting(context.Background(), settings.KeyPrinterName); name != "Selphy_CP1500" {
 		t.Errorf("printer_name: got %q, want Selphy_CP1500", name)
 	}
 

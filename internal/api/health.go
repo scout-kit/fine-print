@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"time"
 )
@@ -21,10 +22,16 @@ func (h *Handlers) Readyz(w http.ResponseWriter, r *http.Request) {
 	checks := map[string]string{}
 	overall := http.StatusOK
 
+	// This endpoint is deliberately unauthenticated so a supervisor or
+	// monitor can poll it, which means it's also reachable by any guest on
+	// the hotspot. Failures are logged with detail but reported generically
+	// — raw driver errors carry filesystem paths and DSN fragments.
+
 	// DB ping — issuing any query proves the connection pool is live.
 	if h.queries != nil {
 		if _, err := h.queries.GetSetting(r.Context(), "__readyz_probe__"); err != nil {
-			checks["db"] = "fail: " + err.Error()
+			log.Printf("readyz: db check failed: %v", err)
+			checks["db"] = "fail"
 			overall = http.StatusServiceUnavailable
 		} else {
 			checks["db"] = "ok"
@@ -35,7 +42,8 @@ func (h *Handlers) Readyz(w http.ResponseWriter, r *http.Request) {
 	if h.diskGuard != nil {
 		status, err := h.diskGuard.ReadyzStatus()
 		if err != nil {
-			checks["disk"] = "fail: " + err.Error()
+			log.Printf("readyz: disk check failed: %v", err)
+			checks["disk"] = "fail"
 			overall = http.StatusServiceUnavailable
 		} else if status != "ok" {
 			checks["disk"] = status
