@@ -9,15 +9,48 @@ import (
 	"github.com/fogleman/gg"
 )
 
+// TextAlign says which edge of the rendered text stays pinned to X.
+//
+// It matters because text whose content isn't fixed — a date overlay renders a
+// different string for every photo — changes width between renders. Anchoring
+// the left edge lets a long date grow rightward off the print; anchoring the
+// right edge keeps it inside.
+type TextAlign string
+
+const (
+	// TextAlignLeft pins the left edge to X: the text grows rightward.
+	TextAlignLeft TextAlign = "left"
+	// TextAlignCenter pins the horizontal midpoint to X: the text grows
+	// outward in both directions, staying centred on X.
+	TextAlignCenter TextAlign = "center"
+	// TextAlignRight pins the right edge to X: the text grows leftward.
+	TextAlignRight TextAlign = "right"
+)
+
+// Valid reports whether a is an alignment the renderer understands.
+func (a TextAlign) Valid() bool {
+	switch a {
+	case TextAlignLeft, TextAlignCenter, TextAlignRight:
+		return true
+	}
+	return false
+}
+
+// DefaultTextAlign is the anchor applied when none is stored. Left matches how
+// every overlay behaved before alignment existed.
+const DefaultTextAlign = TextAlignLeft
+
 // TextParams defines how text is rendered on an image.
 type TextParams struct {
-	Text       string  `json:"text"`
-	FontPath   string  `json:"font_path"`
-	FontSize   float64 `json:"font_size"`
-	Color      string  `json:"color"`   // Hex color, e.g., "#FFFFFF"
-	X          float64 `json:"x"`       // Normalized position 0-1
-	Y          float64 `json:"y"`
-	Opacity    float64 `json:"opacity"` // 0-1
+	Text     string  `json:"text"`
+	FontPath string  `json:"font_path"`
+	FontSize float64 `json:"font_size"`
+	Color    string  `json:"color"` // Hex color, e.g., "#FFFFFF"
+	X        float64 `json:"x"`     // Normalized position 0-1 of the anchored edge
+	Y        float64 `json:"y"`
+	Opacity  float64 `json:"opacity"` // 0-1
+	// Align picks which edge X refers to. Empty means DefaultTextAlign.
+	Align TextAlign `json:"align"`
 }
 
 // RenderText draws text onto an image at the specified position.
@@ -53,13 +86,25 @@ func RenderText(base image.Image, params TextParams) (image.Image, error) {
 	clr.A = uint8(float64(clr.A) * params.Opacity)
 	dc.SetColor(clr)
 
-	// Calculate pixel position — X,Y is top-left of text box
+	// X is the anchored edge, Y is always the top of the text box.
 	posX := params.X * float64(w)
 	posY := params.Y * float64(h)
 
+	textW, textH := dc.MeasureString(params.Text)
+
+	// Shift by the measured width so X lands on the requested edge. Measuring
+	// happens after the font is loaded, so the width reflects the real face.
+	// Anything unrecognised (including empty) falls through as left, which is
+	// how overlays behaved before alignment existed.
+	switch params.Align {
+	case TextAlignRight:
+		posX -= textW
+	case TextAlignCenter:
+		posX -= textW / 2
+	}
+
 	// DrawString places text at the baseline. Offset Y by the font ascent
 	// so that posY represents the top of the text, matching the canvas preview.
-	_, textH := dc.MeasureString(params.Text)
 	dc.DrawString(params.Text, posX, posY+textH)
 
 	return dc.Image(), nil

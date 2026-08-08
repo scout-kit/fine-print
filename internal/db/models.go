@@ -122,6 +122,14 @@ const (
 	TextSourcePhotoDateTime = "photo_datetime"
 )
 
+// Which edge of the text stays pinned to the overlay's x. Mirrors
+// imaging.TextAlign.
+const (
+	TextAlignLeft   = "left"
+	TextAlignCenter = "center"
+	TextAlignRight  = "right"
+)
+
 type TextOverlay struct {
 	ID            uint64  `db:"id" json:"id"`
 	ProjectID     uint64  `db:"project_id" json:"project_id"`
@@ -140,7 +148,19 @@ type TextOverlay struct {
 	// DateFormat names a preset from the imaging package. Only meaningful
 	// for date sources; NULL/empty falls back to that source's default.
 	DateFormat sql.NullString `db:"date_format" json:"-"`
-	CreatedAt  time.Time      `db:"created_at" json:"created_at"`
+	// TextAlign picks which edge of the rendered text sits at X. Matters most
+	// for date overlays, whose width changes with the date being printed.
+	TextAlign string    `db:"text_align" json:"text_align"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+}
+
+// AlignOrDefault returns the anchor edge, treating a blank column (rows
+// written before the text_align column existed) as left.
+func (t TextOverlay) AlignOrDefault() string {
+	if t.TextAlign == "" {
+		return TextAlignLeft
+	}
+	return t.TextAlign
 }
 
 // SourceOrDefault returns the content source, treating a blank column (rows
@@ -166,10 +186,12 @@ func (t TextOverlay) MarshalJSON() ([]byte, error) {
 		Alias
 		Source     string `json:"source"`
 		DateFormat string `json:"date_format"`
+		TextAlign  string `json:"text_align"`
 	}{
 		Alias:      Alias(t),
 		Source:     t.SourceOrDefault(),
 		DateFormat: t.DateFormat.String,
+		TextAlign:  t.AlignOrDefault(),
 	})
 }
 

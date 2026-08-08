@@ -366,6 +366,7 @@ func (h *Handlers) CreateTextOverlay(w http.ResponseWriter, r *http.Request) {
 		OrientationID uint    `json:"orientation_id"`
 		Source        string  `json:"source"`
 		DateFormat    string  `json:"date_format"`
+		TextAlign     string  `json:"text_align"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -373,6 +374,12 @@ func (h *Handlers) CreateTextOverlay(w http.ResponseWriter, r *http.Request) {
 	}
 
 	source, dateFormat, err := normalizeTextSource(req.Source, req.DateFormat)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	align, err := normalizeTextAlign(req.TextAlign)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -411,6 +418,7 @@ func (h *Handlers) CreateTextOverlay(w http.ResponseWriter, r *http.Request) {
 		OrientationID: orientID,
 		Source:        source,
 		DateFormat:    dateFormat,
+		TextAlign:     align,
 	}
 
 	if err := h.queries.CreateTextOverlay(r.Context(), t); err != nil {
@@ -442,6 +450,7 @@ func (h *Handlers) UpdateTextOverlayHandler(w http.ResponseWriter, r *http.Reque
 		ZOrder     *int     `json:"z_order"`
 		Source     *string  `json:"source"`
 		DateFormat *string  `json:"date_format"`
+		TextAlign  *string  `json:"text_align"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -500,6 +509,15 @@ func (h *Handlers) UpdateTextOverlayHandler(w http.ResponseWriter, r *http.Reque
 		}
 		existing.Source = source
 		existing.DateFormat = dateFormat
+	}
+
+	if req.TextAlign != nil {
+		align, verr := normalizeTextAlign(*req.TextAlign)
+		if verr != nil {
+			writeError(w, http.StatusBadRequest, verr.Error())
+			return
+		}
+		existing.TextAlign = align
 	}
 
 	if existing.SourceOrDefault() == db.TextSourceStatic && existing.Text == "" {
@@ -600,6 +618,7 @@ func (h *Handlers) CopyTemplateOrientation(w http.ResponseWriter, r *http.Reques
 			OrientationID: req.To,
 			Source:        t.SourceOrDefault(),
 			DateFormat:    t.DateFormat,
+			TextAlign:     t.AlignOrDefault(),
 		})
 	}
 
@@ -692,10 +711,24 @@ func (h *Handlers) CopyProject(w http.ResponseWriter, r *http.Request) {
 			OrientationID: t.OrientationID,
 			Source:        t.SourceOrDefault(),
 			DateFormat:    t.DateFormat,
+			TextAlign:     t.AlignOrDefault(),
 		})
 	}
 
 	writeJSON(w, http.StatusCreated, newProject)
+}
+
+// normalizeTextAlign validates the anchor edge, defaulting to left so an
+// omitted value keeps the behavior overlays had before alignment existed.
+func normalizeTextAlign(align string) (string, error) {
+	if align == "" {
+		return db.TextAlignLeft, nil
+	}
+	if !imaging.TextAlign(align).Valid() {
+		return "", fmt.Errorf("text_align must be %q, %q or %q",
+			db.TextAlignLeft, db.TextAlignCenter, db.TextAlignRight)
+	}
+	return align, nil
 }
 
 // normalizeTextSource validates a text overlay's content source and format

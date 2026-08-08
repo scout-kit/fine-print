@@ -8,8 +8,10 @@
 		copyTemplateOrientation, listAvailableFonts, listDateFormats,
 		ORIENTATION_LANDSCAPE, ORIENTATION_PORTRAIT,
 		TEXT_SOURCE_STATIC, TEXT_SOURCE_PHOTO_DATE, TEXT_SOURCE_PHOTO_DATETIME,
+		TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER, TEXT_ALIGN_RIGHT,
 		type ProjectResponse, type Overlay, type TextOverlay, type SystemFont,
-		type TextSourceOption, type TextOverlaySource, type DateFormatOption
+		type TextSourceOption, type TextOverlaySource, type DateFormatOption,
+		type TextAlign
 	} from '$lib/api';
 
 	const projectId = $derived(Number(page.params.id));
@@ -23,6 +25,7 @@
 	let newFontFamily = $state('');
 	let newSource: TextOverlaySource = $state(TEXT_SOURCE_STATIC);
 	let newDateFormat = $state('');
+	let newAlign: TextAlign = $state(TEXT_ALIGN_LEFT);
 	let fonts: SystemFont[] = $state([]);
 
 	// Date presets come from the backend so the examples shown here are
@@ -43,6 +46,18 @@
 
 	function isDateSource(source: TextOverlaySource | undefined): boolean {
 		return source === TEXT_SOURCE_PHOTO_DATE || source === TEXT_SOURCE_PHOTO_DATETIME;
+	}
+
+	// x is the anchored edge, so this decides which way the text grows when its
+	// content gets longer.
+	const ALIGN_OPTIONS: { value: TextAlign; label: string; hint: string }[] = [
+		{ value: TEXT_ALIGN_LEFT,   label: 'Left',   hint: 'x is the left edge — text grows right' },
+		{ value: TEXT_ALIGN_CENTER, label: 'Center', hint: 'x is the midpoint — text grows evenly both ways' },
+		{ value: TEXT_ALIGN_RIGHT,  label: 'Right',  hint: 'x is the right edge — text grows left' }
+	];
+
+	function alignHint(align: TextAlign | undefined): string {
+		return ALIGN_OPTIONS.find(o => o.value === (align || TEXT_ALIGN_LEFT))?.hint ?? '';
 	}
 
 	/**
@@ -181,7 +196,8 @@
 			x: 0.5, y: 0.5, opacity: 1.0,
 			orientation_id: orientation,
 			source: newSource,
-			date_format: isDateSource(newSource) ? (newDateFormat || defaultFormatFor(newSource)) : undefined
+			date_format: isDateSource(newSource) ? (newDateFormat || defaultFormatFor(newSource)) : undefined,
+			text_align: newAlign
 		});
 		newText = '';
 		load();
@@ -198,7 +214,7 @@
 	async function saveText(id: number) {
 		const t = getText(id);
 		if (!t) return;
-		await updateTextOverlay(id, { text: t.text, font_family: t.font_family, font_size: t.font_size, color: t.color, x: t.x, y: t.y, opacity: t.opacity, source: t.source, date_format: t.date_format });
+		await updateTextOverlay(id, { text: t.text, font_family: t.font_family, font_size: t.font_size, color: t.color, x: t.x, y: t.y, opacity: t.opacity, source: t.source, date_format: t.date_format, text_align: t.text_align });
 		editingTextId = null;
 	}
 </script>
@@ -288,6 +304,7 @@
 					<span class="item-name" style="color: {t.color};">{textPreview(t) || '(empty)'}</span>
 					{#if isDateSource(t.source)}
 						<span class="source-badge">{sourceLabel(t.source)}</span>
+						<span class="item-meta">anchor: {(t.text_align || TEXT_ALIGN_LEFT)}</span>
 					{/if}
 					<span class="item-meta">{t.font_size}pt</span>
 					{#if editingTextId !== t.id}<button class="ghost sm-btn" onclick={() => startEditText(t.id)}>Edit</button>{/if}
@@ -334,6 +351,18 @@
 							<label class="num-field"><span>Size</span><input type="number" min="8" max="400" step="1" value={t.font_size} oninput={(e) => updateTextProp(t.id, 'font_size', Number((e.target as HTMLInputElement).value))} /></label>
 							<label class="num-field"><span>Color</span><input type="color" value={t.color} oninput={(e) => updateTextProp(t.id, 'color', (e.target as HTMLInputElement).value)} style="height: 36px; padding: 2px; min-height: auto;" /></label>
 						</div>
+						<div class="align-row">
+							<span class="align-label">Anchor</span>
+							{#each ALIGN_OPTIONS as opt}
+								<button
+									type="button"
+									class="align-btn"
+									class:active={(t.text_align || TEXT_ALIGN_LEFT) === opt.value}
+									onclick={() => updateTextProp(t.id, 'text_align', opt.value)}
+								>{opt.label}</button>
+							{/each}
+						</div>
+						<p class="source-hint">{alignHint(t.text_align)}</p>
 						<label class="slider-group"><span>Opacity: {(t.opacity ?? 1).toFixed(2)}</span><input type="range" min="0" max="1" step="0.05" value={t.opacity ?? 1} oninput={(e) => updateTextProp(t.id, 'opacity', Number((e.target as HTMLInputElement).value))} /></label>
 						<div class="edit-actions">
 							<button class="primary sm-btn" onclick={() => saveText(t.id)}>Save</button>
@@ -384,7 +413,16 @@
 				</label>
 				<label><span>Size</span><input type="number" min="8" max="200" bind:value={newFontSize} style="width: 70px;" /></label>
 				<label><span>Color</span><input type="color" bind:value={newTextColor} style="width: 50px; height: 36px; padding: 2px; min-height: auto;" /></label>
+				<label>
+					<span>Anchor</span>
+					<select bind:value={newAlign} style="min-height: auto; padding: 4px 8px; font-size: 0.8rem;">
+						{#each ALIGN_OPTIONS as opt}
+							<option value={opt.value}>{opt.label}</option>
+						{/each}
+					</select>
+				</label>
 			</div>
+			<p class="source-hint">{alignHint(newAlign)}</p>
 			<button class="primary" type="submit" style="padding: 8px 16px;">{isDateSource(newSource) ? 'Add Date' : 'Add Text'}</button>
 		</form>
 	</section>
@@ -436,6 +474,33 @@
 		background: var(--accent);
 		color: #fff;
 		white-space: nowrap;
+	}
+
+	.align-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.align-label {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		min-width: 52px;
+	}
+
+	.align-btn {
+		padding: 4px 12px;
+		font-size: 0.75rem;
+		min-height: auto;
+		background: none;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		color: var(--text-muted);
+	}
+
+	.align-btn.active {
+		border-color: var(--accent);
+		color: var(--accent);
 	}
 
 	.source-hint {
