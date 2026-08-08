@@ -7,7 +7,6 @@
 
 	let photos: GalleryPhoto[] = $state([]);
 	let selectedPhoto: GalleryPhoto | null = $state(null);
-	let guestSession = $state('');
 	let loading = $state(false);
 	let sse: SSEConnection | null = null;
 
@@ -20,8 +19,9 @@
 
 	onMount(() => {
 		load();
-		const match = document.cookie.match(/fineprint_guest=([^;]+)/);
-		if (match) guestSession = match[1];
+		// Ownership comes from the photo's is_mine flag. The guest cookie is
+		// HttpOnly, so reading it here was never possible — this page's own
+		// delete affordance had been silently dead as a result.
 
 		sse = createSSE('/api/events');
 		let skipFirst = true;
@@ -54,7 +54,6 @@
 {#if selectedPhoto}
 	<PhotoModal
 		photo={selectedPhoto}
-		{guestSession}
 		onClose={() => selectedPhoto = null}
 		onAction={load}
 	/>

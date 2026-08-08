@@ -13,6 +13,8 @@
 		project_id?: number;
 		status_id: number;
 		session_id?: string;
+		/** Server-resolved ownership, used by the public gallery. */
+		is_mine?: boolean;
 		preview_key?: string | null;
 		has_preview?: boolean;
 		copies?: number;
@@ -52,7 +54,12 @@
 	afterNavigate(() => { renderTs = Date.now(); });
 
 	const status = $derived(photoStatusName(photo.status_id));
-	const isOwn = $derived(guestSession !== '' && photo.session_id === guestSession);
+	// The public gallery supplies is_mine (computed server-side, since the guest
+	// cookie is HttpOnly and unreadable here). Admin views pass full photo
+	// objects and a known session instead.
+	const isOwn = $derived(
+		photo.is_mine ?? (guestSession !== '' && photo.session_id === guestSession)
+	);
 	const hasPreview = $derived(!!(photo.preview_key || photo.has_preview));
 	const rows = $derived(metaRows(photo));
 

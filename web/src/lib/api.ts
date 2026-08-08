@@ -583,11 +583,18 @@ export interface Font {
 
 export interface GalleryPhoto {
 	id: number;
+	project_id: number;
 	status_id: number;
 	status: string;
 	has_preview: boolean;
 	has_render: boolean;
-	session_id: string;
+	/**
+	 * Whether this photo belongs to the requesting guest, resolved server-side.
+	 * The raw session_id is never published — guest sessions are accepted
+	 * verbatim from the cookie, so exposing other guests' ids would let anyone
+	 * adopt one.
+	 */
+	is_mine: boolean;
 	created_at: string;
 }
 

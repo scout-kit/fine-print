@@ -8,8 +8,17 @@ import (
 	"github.com/scout-kit/fine-print/internal/storage"
 )
 
-// Gallery returns photos for the gallery view.
-// Optional query param: ?project_id=N to filter by project. Without it, returns all.
+// Gallery returns photos for the public guest gallery view.
+//
+// This is an unauthenticated endpoint, so it only ever exposes photos from
+// projects marked public. Hidden projects are reachable by link/QR precisely
+// because they are meant to stay out of listings like this one, and private
+// projects are not guest-visible at all.
+//
+// Optional query param: ?project_id=N narrows to one project. That project
+// must also be public — allowing hidden projects to be fetched by numeric id
+// would defeat the point of their unguessable slug, since ids are sequential
+// and trivially enumerated.
 func (h *Handlers) Gallery(w http.ResponseWriter, r *http.Request) {
 	var photos []db.Photo
 	var err error
@@ -21,9 +30,16 @@ func (h *Handlers) Gallery(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid project_id")
 			return
 		}
+		project, projErr := h.queries.GetProject(r.Context(), projectID)
+		if projErr != nil || project == nil || project.VisibilityID != db.VisibilityPublic {
+			// Same 404 for "no such project" and "not public", so the
+			// response can't be used to probe which ids exist.
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
 		photos, err = h.queries.ListGalleryPhotos(r.Context(), projectID)
 	} else {
-		photos, err = h.queries.ListAllGalleryPhotos(r.Context())
+		photos, err = h.queries.ListPublicGalleryPhotos(r.Context())
 	}
 
 	if err != nil {
@@ -31,6 +47,10 @@ func (h *Handlers) Gallery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// IsMine is resolved server-side from the requester's own cookie. The
+	// raw session_id is deliberately not published: guest sessions are
+	// accepted verbatim from the cookie, so handing out other guests'
+	// session ids let anyone adopt one and delete that guest's photos.
 	type galleryPhoto struct {
 		ID         uint64 `json:"id"`
 		ProjectID  uint64 `json:"project_id"`
@@ -38,8 +58,14 @@ func (h *Handlers) Gallery(w http.ResponseWriter, r *http.Request) {
 		Status     string `json:"status"`
 		HasPreview bool   `json:"has_preview"`
 		HasRender  bool   `json:"has_render"`
-		SessionID  string `json:"session_id"`
+		IsMine     bool   `json:"is_mine"`
 		CreatedAt  string `json:"created_at"`
+	}
+
+	// Absent cookie leaves this empty, which matches no photo.
+	var session string
+	if cookie, cerr := r.Cookie("fineprint_guest"); cerr == nil {
+		session = cookie.Value
 	}
 
 	result := make([]galleryPhoto, 0, len(photos))
@@ -51,7 +77,7 @@ func (h *Handlers) Gallery(w http.ResponseWriter, r *http.Request) {
 			Status:     db.PhotoStatusName(p.StatusID),
 			HasPreview: p.PreviewKey.Valid,
 			HasRender:  p.RenderedKey.Valid,
-			SessionID:  p.SessionID,
+			IsMine:     session != "" && p.SessionID == session,
 			CreatedAt:  p.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		})
 	}
