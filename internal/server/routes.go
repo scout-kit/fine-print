@@ -13,6 +13,10 @@ func RegisterRoutes(mux *http.ServeMux, handlers *api.Handlers, queries *db.Quer
 	// Health check
 	mux.HandleFunc("GET /api/health", handlers.Health)
 
+	// First-run setup (public — only mutates while the wizard hasn't run)
+	mux.HandleFunc("GET /api/setup/status", handlers.SetupStatus)
+	mux.HandleFunc("POST /api/setup/complete", handlers.CompleteSetup)
+
 	// Guest routes
 	mux.HandleFunc("POST /api/photos", handlers.UploadPhoto)
 	mux.HandleFunc("GET /api/photos/{id}/status", handlers.PhotoStatus)

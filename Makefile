@@ -1,4 +1,4 @@
-.PHONY: build dev frontend backend clean test
+.PHONY: build dev frontend backend clean test deps install
 
 # Default target
 build: backend frontend
@@ -48,7 +48,15 @@ build-pi:
 build-linux:
 	GOOS=linux GOARCH=amd64 go build -o bin/fine-print-linux-amd64 ./cmd/fine-print
 
-# Install dependencies
+# Verify build + runtime prerequisites. Fails fast with copy-paste install
+# commands for macOS (brew) or Debian/Pi OS (apt). Does not auto-install
+# toolchains — if anything is missing you'll see what to run.
 deps:
+	bash scripts/bootstrap.sh
 	go mod tidy
 	cd web && npm install
+
+# Full install: bootstrap → build frontend + backend → install service.
+# Run with sudo so the service files land in the right place.
+install:
+	bash scripts/install.sh

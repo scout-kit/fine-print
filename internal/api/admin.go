@@ -27,18 +27,16 @@ func (h *Handlers) AdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check password against stored hash
-	storedHash, _ := h.queries.GetSetting(r.Context(), "admin_password_hash")
-
+	// Check password against stored hash. When no hash is present the
+	// first-run wizard hasn't run yet — block login and signal the
+	// frontend to redirect to /setup.
+	storedHash, _ := h.queries.GetSetting(r.Context(), settings.KeyAdminPasswordHash)
 	if storedHash == "" {
-		// First login — set the password from config
-		hash, err := bcrypt.GenerateFromPassword([]byte(h.cfg.Admin.Password), bcrypt.DefaultCost)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to hash password")
-			return
-		}
-		h.queries.SetSetting(r.Context(), "admin_password_hash", string(hash))
-		storedHash = string(hash)
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error":         "setup_required",
+			"redirect":      "/setup",
+		})
+		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(req.Password)); err != nil {

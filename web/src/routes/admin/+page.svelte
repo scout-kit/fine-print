@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { isAdmin } from '$lib/stores';
-	import { adminLogin, listPhotos, listProjects, listQueue, type Photo, type Project, type QueueResponse } from '$lib/api';
+	import { adminLogin, getSetupStatus, listPhotos, listProjects, listQueue, type Photo, type Project, type QueueResponse } from '$lib/api';
 	import PhotoThumb from '$lib/PhotoThumb.svelte';
 	import PhotoModal from '$lib/PhotoModal.svelte';
 	import { createSSE, type SSEConnection } from '$lib/sse';
@@ -31,7 +32,12 @@
 			authenticated = true;
 			startDashboard();
 		} catch (e) {
-			loginError = e instanceof Error ? e.message : 'Login failed';
+			const msg = e instanceof Error ? e.message : 'Login failed';
+			if (msg === 'setup_required') {
+				goto('/setup');
+				return;
+			}
+			loginError = msg;
 		}
 		loggingIn = false;
 	}
@@ -70,7 +76,18 @@
 		}
 	}
 
-	onMount(() => {
+	onMount(async () => {
+		// Bounce to the setup wizard if the kiosk hasn't been configured yet.
+		try {
+			const s = await getSetupStatus();
+			if (s.needs_setup) {
+				goto('/setup');
+				return;
+			}
+		} catch {
+			// Setup status is best-effort — if the server is unreachable we'll
+			// fall through to the login form and surface the real error there.
+		}
 		if (authenticated) startDashboard();
 	});
 

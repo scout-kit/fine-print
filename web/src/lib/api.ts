@@ -64,6 +64,27 @@ export function getProjectPublic(id: number): Promise<ProjectResponse> {
 	return request('GET', `/projects/${id}`);
 }
 
+// First-run setup
+export interface SetupStatus {
+	needs_setup: boolean;
+	printers?: PrinterInfo[];
+}
+
+export interface SetupRequest {
+	admin_password: string;
+	hotspot_ssid?: string;
+	hotspot_password?: string;
+	printer_name?: string;
+}
+
+export function getSetupStatus(): Promise<SetupStatus> {
+	return request('GET', '/setup/status');
+}
+
+export function completeSetup(req: SetupRequest): Promise<{ status: string }> {
+	return request('POST', '/setup/complete', req);
+}
+
 // Admin API
 export function adminLogin(password: string): Promise<{ status: string }> {
 	return request('POST', '/admin/login', { password });
