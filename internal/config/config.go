@@ -119,29 +119,37 @@ func DefaultConfig() Config {
 	}
 }
 
-func Load(path string) (Config, error) {
+// LoadYAML loads defaults then overlays values from the YAML file at path.
+// It does NOT apply environment variables or validate. Callers that want
+// env precedence over DB-backed settings should call LoadYAML, then their
+// DB overlay, then ApplyEnv, then Validate.
+func LoadYAML(path string) (Config, error) {
 	cfg := DefaultConfig()
-
-	if path != "" {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return cfg, fmt.Errorf("reading config file: %w", err)
-		}
-		if err := yaml.Unmarshal(data, &cfg); err != nil {
-			return cfg, fmt.Errorf("parsing config file: %w", err)
-		}
+	if path == "" {
+		return cfg, nil
 	}
-
-	applyEnvOverrides(&cfg)
-
-	if err := validate(cfg); err != nil {
-		return cfg, fmt.Errorf("config validation: %w", err)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return cfg, fmt.Errorf("reading config file: %w", err)
 	}
-
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return cfg, fmt.Errorf("parsing config file: %w", err)
+	}
 	return cfg, nil
 }
 
-func applyEnvOverrides(cfg *Config) {
+// ApplyEnv applies all environment variable overrides to cfg. Use this when
+// you're not layering a DB overlay. If you are, prefer ApplyBootstrapEnv
+// before opening the DB and ApplyTunableEnv after the overlay — otherwise
+// env vars that affect DB-open (like FINEPRINT_DB_SQLITE_PATH) won't take effect.
+func ApplyEnv(cfg *Config) {
+	ApplyBootstrapEnv(cfg)
+	ApplyTunableEnv(cfg)
+}
+
+// ApplyBootstrapEnv applies env vars for fields that must be resolved before
+// the database is opened.
+func ApplyBootstrapEnv(cfg *Config) {
 	if v := os.Getenv("FINEPRINT_DEV"); v == "1" || strings.EqualFold(v, "true") {
 		cfg.Dev.Mode = true
 		cfg.Hotspot.Enabled = false
@@ -167,11 +175,19 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("FINEPRINT_DB_MYSQL_DSN"); v != "" {
 		cfg.Database.MySQLDSN = v
 	}
-	if v := os.Getenv("FINEPRINT_ADMIN_PASSWORD"); v != "" {
-		cfg.Admin.Password = v
+	if v := os.Getenv("FINEPRINT_TLS"); v == "1" || strings.EqualFold(v, "true") {
+		cfg.TLS.Enabled = true
 	}
 	if v := os.Getenv("FINEPRINT_FRONTEND_PROXY"); v != "" {
 		cfg.Dev.FrontendProxy = v
+	}
+}
+
+// ApplyTunableEnv applies env vars for DB-backed tunable fields. Runs after
+// the DB overlay so env vars win over persisted settings.
+func ApplyTunableEnv(cfg *Config) {
+	if v := os.Getenv("FINEPRINT_ADMIN_PASSWORD"); v != "" {
+		cfg.Admin.Password = v
 	}
 	if v := os.Getenv("FINEPRINT_HOTSPOT_SSID"); v != "" {
 		cfg.Hotspot.SSID = v
@@ -182,9 +198,28 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("FINEPRINT_PRINTER_NAME"); v != "" {
 		cfg.Printer.Name = v
 	}
-	if v := os.Getenv("FINEPRINT_TLS"); v == "1" || strings.EqualFold(v, "true") {
-		cfg.TLS.Enabled = true
+}
+
+// Validate returns an error if the config is malformed.
+func Validate(cfg Config) error {
+	if err := validate(cfg); err != nil {
+		return fmt.Errorf("config validation: %w", err)
 	}
+	return nil
+}
+
+// Load is a convenience wrapper: YAML → env → validate. Callers that don't
+// use the DB-backed settings overlay can use this directly.
+func Load(path string) (Config, error) {
+	cfg, err := LoadYAML(path)
+	if err != nil {
+		return cfg, err
+	}
+	ApplyEnv(&cfg)
+	if err := Validate(cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
 }
 
 func validate(cfg Config) error {

@@ -21,6 +21,7 @@ import (
 	"github.com/scout-kit/fine-print/internal/printer"
 	"github.com/scout-kit/fine-print/internal/qrcode"
 	"github.com/scout-kit/fine-print/internal/server"
+	"github.com/scout-kit/fine-print/internal/settings"
 	"github.com/scout-kit/fine-print/internal/storage"
 )
 
@@ -32,21 +33,18 @@ func main() {
 	)
 	flag.Parse()
 
-	// Load config
-	cfg, err := config.Load(*configPath)
+	// Load config from YAML. Bootstrap-tier env vars (DB path, data dir,
+	// ports) must be resolved before the DB opens; tunable env vars apply
+	// after the DB overlay so they still win over persisted settings.
+	cfg, err := config.LoadYAML(*configPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
-
-	// Apply flag overrides
-	if *devMode {
-		cfg.Dev.Mode = true
-		cfg.Hotspot.Enabled = false
-		cfg.DNS.Enabled = false
-	}
-	if *port > 0 {
-		cfg.Server.Port = *port
-	}
+	// Snapshot pure-YAML values before applying runtime env overrides — the
+	// first-boot seed persists those snapshots, not the transient dev-mode
+	// mutations (e.g. FINEPRINT_DEV disabling hotspot).
+	yamlSeedCfg := cfg
+	config.ApplyBootstrapEnv(&cfg)
 
 	// Initialize data directory
 	if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
@@ -73,6 +71,30 @@ func main() {
 
 	queries := db.NewQueries(database)
 
+	// Overlay DB-backed settings onto cfg, then env vars (highest precedence),
+	// then validate. First boot seeds the DB from YAML values.
+	settingsStore := settings.NewStore(queries)
+	seedCtx := context.Background()
+	if err := settingsStore.SeedFromConfig(seedCtx, yamlSeedCfg); err != nil {
+		log.Fatalf("Failed to seed settings: %v", err)
+	}
+	settingsStore.ApplyToConfig(seedCtx, &cfg)
+	config.ApplyTunableEnv(&cfg)
+
+	// CLI flags win last so -dev / -port always take effect for this process.
+	if *devMode {
+		cfg.Dev.Mode = true
+		cfg.Hotspot.Enabled = false
+		cfg.DNS.Enabled = false
+	}
+	if *port > 0 {
+		cfg.Server.Port = *port
+	}
+
+	if err := config.Validate(cfg); err != nil {
+		log.Fatalf("Invalid config: %v", err)
+	}
+
 	// Initialize imaging pipeline
 	pipeline := imaging.NewPipeline(
 		cfg.Imaging.PrintWidth,
@@ -98,7 +120,10 @@ func main() {
 	qrHandler := qrcode.NewHandler(cfg.Hotspot.Gateway, cfg.Server.Port)
 
 	// Initialize API handlers
-	handlers := api.NewHandlers(cfg, queries, store, pipeline, queueMgr, cupsPrinter, qrHandler)
+	broadcastAdmin := func(eventType string, data any) {
+		sseHub.BroadcastAdmin(server.NewEvent(eventType, data))
+	}
+	handlers := api.NewHandlers(cfg, queries, store, pipeline, queueMgr, cupsPrinter, qrHandler, settingsStore, broadcastAdmin)
 
 	// Get frontend filesystem
 	frontendFSys, err := frontend.FS()

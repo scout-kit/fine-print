@@ -38,7 +38,8 @@ export function createSSE(url: string): SSEConnection {
 	// Listen for all event types
 	for (const type of [
 		'connected', 'photo_status', 'print_status',
-		'print_error', 'queue_paused', 'queue_resumed', 'new_photo'
+		'print_error', 'queue_paused', 'queue_resumed', 'new_photo',
+		'settings_changed', 'restarting'
 	]) {
 		source.addEventListener(type, (e: MessageEvent) => {
 			try {
