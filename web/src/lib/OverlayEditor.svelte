@@ -5,13 +5,19 @@
 	interface Props {
 		overlays: Overlay[];
 		textOverlays: TextOverlay[];
+		/**
+		 * What to draw for a given text overlay. Date-sourced overlays have no
+		 * literal text, so the caller supplies a sample string rendered by the
+		 * backend formatter. Falls back to the overlay's own text.
+		 */
+		textPreview?: (t: TextOverlay) => string;
 		lockAspect?: Record<number, boolean>;
 		portrait?: boolean;
 		onOverlayUpdate: (id: number, data: { x: number; y: number; width: number; height: number; opacity: number }) => void;
 		onTextUpdate: (id: number, data: { x: number; y: number; font_size?: number }) => void;
 	}
 
-	let { overlays, textOverlays, lockAspect = {}, portrait = false, onOverlayUpdate, onTextUpdate }: Props = $props();
+	let { overlays, textOverlays, textPreview, lockAspect = {}, portrait = false, onOverlayUpdate, onTextUpdate }: Props = $props();
 
 	let canvasEl: HTMLCanvasElement;
 	let containerEl: HTMLDivElement;
@@ -148,7 +154,7 @@
 				cssFont = fname;
 			}
 
-			const ft = new fabric.FabricText(t.text, {
+			const ft = new fabric.FabricText(textPreview?.(t) || t.text || ' ', {
 				left: t.x * cw,
 				top: t.y * ch,
 				fontSize: scaledSize,

@@ -22,6 +22,7 @@ func RegisterRoutes(mux *http.ServeMux, handlers *api.Handlers, queries *db.Quer
 	// Guest routes
 	mux.HandleFunc("POST /api/photos", handlers.UploadPhoto)
 	mux.HandleFunc("GET /api/photos/{id}/status", handlers.PhotoStatus)
+	mux.HandleFunc("GET /api/photos/{id}/metadata", handlers.PhotoMetadata)
 	mux.HandleFunc("GET /api/photos/{id}/preview", handlers.PhotoPreview)
 	mux.HandleFunc("GET /api/photos/{id}/download/original", handlers.DownloadOriginal)
 	mux.HandleFunc("GET /api/photos/{id}/download/rendered", handlers.DownloadRendered)
@@ -84,6 +85,9 @@ func RegisterRoutes(mux *http.ServeMux, handlers *api.Handlers, queries *db.Quer
 	// Text Overlays
 	mux.Handle("PUT /api/admin/text-overlays/{id}", adminAuth(http.HandlerFunc(handlers.UpdateTextOverlayHandler)))
 	mux.Handle("DELETE /api/admin/text-overlays/{id}", adminAuth(http.HandlerFunc(handlers.DeleteTextOverlayHandler)))
+	// Date presets for the text-overlay picker, rendered by the same
+	// formatter the print uses so the examples can't drift.
+	mux.Handle("GET /api/admin/text-overlays/date-formats", adminAuth(http.HandlerFunc(handlers.ListDateFormats)))
 
 	// Fonts
 	mux.Handle("POST /api/admin/fonts", adminAuth(http.HandlerFunc(handlers.UploadFont)))

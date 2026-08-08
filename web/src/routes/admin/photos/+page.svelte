@@ -119,6 +119,7 @@
 				showProject={projectName(photo.project_id)}
 				selectable={selectMode}
 				selected={selectedIds.has(photo.id)}
+				showTakenAt
 			/>
 		{/each}
 	</div>

@@ -18,6 +18,8 @@
 - **Photo Upload** — Single or multi-file upload with drag-and-drop
 - **Image Editor** — Crop, rotate, brightness/contrast/saturation adjustments
 - **Template System** — Per-project overlays (PNG) and text overlays with landscape/portrait support
+- **Date Stamps** — Print the photo's capture date (or date + time) as a template element, styled like any text overlay
+- **Photo Metadata** — EXIF capture date and camera read on upload, visible in the admin modal, photo grid, and guest editor
 - **Print Queue** — CUPS integration, multiple printer support, round-robin or manual assignment
 - **Photo Booth Mode** — Live camera viewfinder, countdown timer, instant print
 - **Project Management** — Public/hidden/private visibility, QR codes, copy projects
@@ -127,6 +129,42 @@ From **Admin → Settings → Backup & Restore**:
 ### Printer monitoring
 
 A background poller (default every 30 s, admin-editable) verifies the configured printer is still listed by CUPS. On disconnect it **pauses the queue** and emits an SSE alert; on reconnect it emits a reconnect event but leaves the queue paused so the admin can confirm paper/ink before resuming.
+
+### Date stamps on prints
+
+A text overlay's **Content** can be set to *Static text*, *Date photo was taken*, or
+*Date + time photo was taken*. Date overlays carry no literal text — the value is
+resolved per photo when the print is rendered — and are positioned, sized, coloured,
+and font-picked exactly like static text.
+
+Format is chosen from presets (`March 14, 2026`, `03/14/2026`, `2026-03-14`, and
+time-bearing equivalents). The picker's examples are rendered server-side by the same
+formatter that renders the print, so what you see is what gets printed. A date-only
+source only offers date-only presets, and the API rejects a mismatched pair rather
+than silently printing something you didn't choose.
+
+**Where the date comes from.** On upload, EXIF `DateTimeOriginal` (falling back to
+`DateTimeDigitized` and `DateTime`) is read from the file, along with camera make and
+model. EXIF timestamps have no timezone — they're wall-clock readings — so they are
+printed verbatim rather than shifted into the server's zone.
+
+Files with no capture date (screenshots, stripped metadata, some booth captures) fall
+back to **the time the photo was uploaded**, so a template designed around a date
+never prints a blank gap. The fallback is always labelled: the metadata panel says
+"upload time — no capture date in file", and the photo grid and modal mark it with a
+`~`. Cameras with an unset clock write all-zero placeholder timestamps, which are
+rejected in favour of the fallback.
+
+HEIC stores EXIF in a container the reader doesn't parse directly. Those files are
+retried against the converted JPEG, which `sips` and `heif-convert` normally populate.
+
+### Viewing photo metadata
+
+- **Admin photo modal** — "Photo Info" under the More menu: capture date and its
+  source, upload time, camera, dimensions, file size, type.
+- **Admin photo grid** — capture date under each thumbnail.
+- **Guest editor** — capture date above the editor, so a guest sees what a date
+  overlay will print before approving.
 
 ## Configuration
 

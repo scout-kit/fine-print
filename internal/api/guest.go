@@ -2,11 +2,14 @@ package api
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"path/filepath"
+	"time"
 
 	"github.com/scout-kit/fine-print/internal/db"
 	"github.com/scout-kit/fine-print/internal/imaging"
@@ -112,6 +115,10 @@ func (h *Handlers) UploadPhoto(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) generatePreview(photo *db.Photo) {
 	originalPath := h.store.Path(storage.BucketOriginals, photo.OriginalKey)
 
+	// Read capture metadata from the file as uploaded, before any HEIC
+	// conversion — converters routinely drop or rewrite EXIF.
+	h.extractCaptureMetadata(photo, originalPath)
+
 	// Convert HEIC to JPEG if needed
 	if imaging.IsHEIC(photo.OriginalKey) {
 		convertedPath, cleanup, err := imaging.ConvertHEICToTemp(originalPath)
@@ -121,6 +128,13 @@ func (h *Handlers) generatePreview(photo *db.Photo) {
 		}
 		defer cleanup()
 		originalPath = convertedPath
+
+		// HEIC stores EXIF in a container the reader doesn't parse. If the
+		// original yielded nothing, retry on the converted JPEG — sips and
+		// heif-convert both carry the capture time across.
+		if !photo.TakenAt.Valid {
+			h.extractCaptureMetadata(photo, originalPath)
+		}
 	}
 
 	img, err := h.pipeline.DecodeFromFile(originalPath)
@@ -162,6 +176,38 @@ func (h *Handlers) generatePreview(photo *db.Photo) {
 		bounds.Dx(), bounds.Dy(),
 		fileSize, "image/jpeg",
 	)
+}
+
+// extractCaptureMetadata reads EXIF from path and persists what it finds onto
+// photo. Absent or unreadable EXIF is not an error — the photo simply keeps a
+// NULL taken_at and consumers fall back to the upload time. Updates the
+// in-memory photo too, so a caller can tell whether a timestamp was found.
+func (h *Handlers) extractCaptureMetadata(photo *db.Photo, path string) {
+	md, err := imaging.ReadMetadata(path)
+	if err != nil {
+		// A file with no EXIF at all is entirely normal (screenshots, some
+		// booth captures), so it's logged only at a low level of interest.
+		if !errors.Is(err, imaging.ErrNoEXIF) {
+			log.Printf("Photo %d: reading exif: %v", photo.ID, err)
+		}
+		return
+	}
+	if !md.HasTakenAt() && md.CameraMake == "" && md.CameraModel == "" {
+		return
+	}
+
+	if err := h.queries.UpdatePhotoCaptureMetadata(
+		contextBackground(), photo.ID, md.TakenAt, md.CameraMake, md.CameraModel,
+	); err != nil {
+		log.Printf("Photo %d: storing capture metadata: %v", photo.ID, err)
+		return
+	}
+
+	if md.HasTakenAt() {
+		photo.TakenAt = sql.NullTime{Time: md.TakenAt, Valid: true}
+	}
+	photo.CameraMake = sql.NullString{String: md.CameraMake, Valid: md.CameraMake != ""}
+	photo.CameraModel = sql.NullString{String: md.CameraModel, Valid: md.CameraModel != ""}
 }
 
 func (h *Handlers) setDefaultTransform(photo *db.Photo) {
@@ -212,6 +258,46 @@ func (h *Handlers) PhotoStatus(w http.ResponseWriter, r *http.Request) {
 		"id":     photo.ID,
 		"status": db.PhotoStatusName(photo.StatusID),
 	})
+}
+
+// PhotoMetadata returns a photo's capture metadata so the editor can show a
+// guest when their photo was taken — the value a date overlay will print.
+//
+// Public, matching the other per-photo guest endpoints: it exposes only what
+// the uploader's own file already contained, and no session identifiers.
+func (h *Handlers) PhotoMetadata(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid photo id")
+		return
+	}
+
+	photo, err := h.queries.GetPhoto(r.Context(), id)
+	if err != nil || photo == nil {
+		writeError(w, http.StatusNotFound, "photo not found")
+		return
+	}
+
+	takenAt, source := photo.EffectiveTakenAt()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":              photo.ID,
+		"taken_at":        takenAt.Format(time.RFC3339),
+		"taken_at_source": source,
+		"camera_label":    photo.CameraLabel(),
+		"original_width":  nullIntValue(photo.OriginalWidth),
+		"original_height": nullIntValue(photo.OriginalHeight),
+		"file_size":       nullIntValue(photo.FileSize),
+		"mime_type":       photo.MimeType.String,
+		"created_at":      photo.CreatedAt.Format(time.RFC3339),
+	})
+}
+
+// nullIntValue unwraps a nullable int for JSON, nil when absent.
+func nullIntValue(ni sql.NullInt64) *int64 {
+	if !ni.Valid {
+		return nil
+	}
+	return &ni.Int64
 }
 
 // PhotoPreview serves the preview image for a photo.

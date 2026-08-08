@@ -5,6 +5,7 @@
 		photoStatusName, approvePhoto, rejectPhoto, unapprovePhoto, deletePhoto, reprintPhoto
 	} from '$lib/api';
 	import { isAdmin } from '$lib/stores';
+	import { metaRows, formatTakenAtShort, isExifDate } from '$lib/photometa';
 
 	// Accepts any object with these fields — works with Photo and GalleryPhoto
 	interface ModalPhoto {
@@ -16,6 +17,16 @@
 		has_preview?: boolean;
 		copies?: number;
 		created_at: string;
+		// Capture metadata. Optional so callers holding a partial photo object
+		// still typecheck; the helpers fall back to created_at.
+		taken_at?: string;
+		taken_at_source?: 'exif' | 'upload';
+		taken_at_exif?: string | null;
+		camera_label?: string;
+		original_width?: number | null;
+		original_height?: number | null;
+		file_size?: number | null;
+		mime_type?: string | null;
 	}
 
 	interface Props {
@@ -28,6 +39,7 @@
 
 	let { photo, onClose, onAction, guestSession = '', projectName = '' }: Props = $props();
 	let showMore = $state(false);
+	let showInfo = $state(false);
 
 	let admin = $state(false);
 	isAdmin.subscribe(v => admin = v);
@@ -42,6 +54,7 @@
 	const status = $derived(photoStatusName(photo.status_id));
 	const isOwn = $derived(guestSession !== '' && photo.session_id === guestSession);
 	const hasPreview = $derived(!!(photo.preview_key || photo.has_preview));
+	const rows = $derived(metaRows(photo));
 
 	async function act(fn: () => Promise<unknown>) {
 		acting = true;
@@ -89,7 +102,10 @@
 			{#if (photo.copies || 1) > 1}
 				<span class="meta copies-badge">{photo.copies}x</span>
 			{/if}
-			<span class="meta" style="margin-left:auto">{new Date(photo.created_at).toLocaleTimeString()}</span>
+			<span class="meta taken-at" style="margin-left:auto" title={isExifDate(photo) ? 'Capture date from photo metadata' : 'No capture date in file — showing upload time'}>
+				{formatTakenAtShort(photo)}
+				{#if !isExifDate(photo)}<span class="approx" aria-label="approximate">~</span>{/if}
+			</span>
 		</div>
 
 		<!-- Image toggle -->
@@ -133,6 +149,9 @@
 
 			{#if showMore}
 				<div class="actions-more">
+					<button class="more-item" onclick={() => { showInfo = !showInfo; showMore = false; }}>
+						{showInfo ? 'Hide Photo Info' : 'Photo Info'}
+					</button>
 					<a href={downloadOriginalUrl(photo.id)} class="more-item" download>Download Original</a>
 					<a href={renderPreviewUrl(photo.id)} class="more-item" download="print_{photo.id}.jpg">Download Print</a>
 
@@ -150,11 +169,55 @@
 					{/if}
 				</div>
 			{/if}
+
+			{#if showInfo}
+				<dl class="info-panel">
+					{#each rows as row}
+						<dt>{row.label}</dt>
+						<dd>
+							{row.value}
+							{#if row.note}<span class="info-note">{row.note}</span>{/if}
+						</dd>
+					{/each}
+				</dl>
+			{/if}
 		</div>
 	</div>
 </div>
 
 <style>
+	.taken-at { display: inline-flex; align-items: baseline; gap: 2px; }
+	.approx { opacity: 0.65; font-weight: 600; }
+
+	.info-panel {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 6px 14px;
+		margin: 12px 0 0;
+		padding: 12px;
+		background: var(--bg-alt, rgba(127, 127, 127, 0.08));
+		border-radius: 6px;
+		font-size: 0.8rem;
+	}
+
+	.info-panel dt {
+		color: var(--text-muted);
+		font-weight: 500;
+		white-space: nowrap;
+	}
+
+	.info-panel dd {
+		margin: 0;
+		overflow-wrap: anywhere;
+	}
+
+	.info-note {
+		display: block;
+		color: var(--text-muted);
+		font-size: 0.72rem;
+		margin-top: 2px;
+	}
+
 	.backdrop {
 		position: fixed;
 		inset: 0;

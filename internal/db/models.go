@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -59,13 +60,13 @@ func VisibilityName(id uint) string {
 }
 
 type Project struct {
-	ID           uint64         `db:"id" json:"id"`
-	Name         string         `db:"name" json:"name"`
-	CreatedAt    time.Time      `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time      `db:"updated_at" json:"updated_at"`
-	Brightness   float64        `db:"brightness" json:"brightness"`
-	Contrast     float64        `db:"contrast" json:"contrast"`
-	Saturation   float64        `db:"saturation" json:"saturation"`
+	ID             uint64         `db:"id" json:"id"`
+	Name           string         `db:"name" json:"name"`
+	CreatedAt      time.Time      `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time      `db:"updated_at" json:"updated_at"`
+	Brightness     float64        `db:"brightness" json:"brightness"`
+	Contrast       float64        `db:"contrast" json:"contrast"`
+	Saturation     float64        `db:"saturation" json:"saturation"`
 	VisibilityID   uint           `db:"visibility_id" json:"visibility_id"`
 	ProjectTypeID  uint           `db:"project_type_id" json:"project_type_id"`
 	BoothCountdown int            `db:"booth_countdown" json:"booth_countdown"`
@@ -113,19 +114,63 @@ type Overlay struct {
 	CreatedAt     time.Time `db:"created_at" json:"created_at"`
 }
 
+// Text overlay content sources. Mirrors imaging.TextSource; kept as plain
+// strings here so the db package doesn't depend on imaging.
+const (
+	TextSourceStatic        = "static"
+	TextSourcePhotoDate     = "photo_date"
+	TextSourcePhotoDateTime = "photo_datetime"
+)
+
 type TextOverlay struct {
-	ID            uint64    `db:"id" json:"id"`
-	ProjectID     uint64    `db:"project_id" json:"project_id"`
-	Text          string    `db:"text" json:"text"`
-	FontFamily    string    `db:"font_family" json:"font_family"`
-	FontSize      float64   `db:"font_size" json:"font_size"`
-	Color         string    `db:"color" json:"color"`
-	X             float64   `db:"x" json:"x"`
-	Y             float64   `db:"y" json:"y"`
-	Opacity       float64   `db:"opacity" json:"opacity"`
-	ZOrder        int       `db:"z_order" json:"z_order"`
-	OrientationID uint      `db:"orientation_id" json:"orientation_id"`
-	CreatedAt     time.Time `db:"created_at" json:"created_at"`
+	ID            uint64  `db:"id" json:"id"`
+	ProjectID     uint64  `db:"project_id" json:"project_id"`
+	Text          string  `db:"text" json:"text"`
+	FontFamily    string  `db:"font_family" json:"font_family"`
+	FontSize      float64 `db:"font_size" json:"font_size"`
+	Color         string  `db:"color" json:"color"`
+	X             float64 `db:"x" json:"x"`
+	Y             float64 `db:"y" json:"y"`
+	Opacity       float64 `db:"opacity" json:"opacity"`
+	ZOrder        int     `db:"z_order" json:"z_order"`
+	OrientationID uint    `db:"orientation_id" json:"orientation_id"`
+	// Source is "static" (print Text verbatim) or a photo-derived source
+	// such as "photo_date" / "photo_datetime".
+	Source string `db:"source" json:"source"`
+	// DateFormat names a preset from the imaging package. Only meaningful
+	// for date sources; NULL/empty falls back to that source's default.
+	DateFormat sql.NullString `db:"date_format" json:"-"`
+	CreatedAt  time.Time      `db:"created_at" json:"created_at"`
+}
+
+// SourceOrDefault returns the content source, treating a blank column (rows
+// written before the source column existed) as static text.
+func (t TextOverlay) SourceOrDefault() string {
+	if t.Source == "" {
+		return TextSourceStatic
+	}
+	return t.Source
+}
+
+// IsDateSource reports whether this overlay's content is derived from the
+// photo's timestamp rather than its stored text.
+func (t TextOverlay) IsDateSource() bool {
+	s := t.SourceOrDefault()
+	return s == TextSourcePhotoDate || s == TextSourcePhotoDateTime
+}
+
+// MarshalJSON flattens date_format so the frontend sees a plain string.
+func (t TextOverlay) MarshalJSON() ([]byte, error) {
+	type Alias TextOverlay
+	return json.Marshal(&struct {
+		Alias
+		Source     string `json:"source"`
+		DateFormat string `json:"date_format"`
+	}{
+		Alias:      Alias(t),
+		Source:     t.SourceOrDefault(),
+		DateFormat: t.DateFormat.String,
+	})
 }
 
 type Photo struct {
@@ -141,8 +186,42 @@ type Photo struct {
 	MimeType       sql.NullString `db:"mime_type" json:"-"`
 	StatusID       uint           `db:"status_id" json:"-"`
 	Copies         int            `db:"copies" json:"-"`
-	CreatedAt      time.Time      `db:"created_at" json:"-"`
-	UpdatedAt      time.Time      `db:"updated_at" json:"-"`
+	// TakenAt is the EXIF capture time. NULL when the file carried no usable
+	// timestamp — consumers fall back to CreatedAt (the upload time).
+	TakenAt     sql.NullTime   `db:"taken_at" json:"-"`
+	CameraMake  sql.NullString `db:"camera_make" json:"-"`
+	CameraModel sql.NullString `db:"camera_model" json:"-"`
+	CreatedAt   time.Time      `db:"created_at" json:"-"`
+	UpdatedAt   time.Time      `db:"updated_at" json:"-"`
+}
+
+// EffectiveTakenAt returns the timestamp to print and display, along with
+// where it came from. EXIF wins; otherwise the upload time stands in, and the
+// "upload" source is reported so the UI can say so rather than implying the
+// camera recorded it.
+func (p Photo) EffectiveTakenAt() (time.Time, string) {
+	if p.TakenAt.Valid && !p.TakenAt.Time.IsZero() {
+		return p.TakenAt.Time, "exif"
+	}
+	return p.CreatedAt, "upload"
+}
+
+// CameraLabel joins make and model into one display string, avoiding the
+// common "Canon Canon EOS R6" duplication when the model repeats the make.
+func (p Photo) CameraLabel() string {
+	make_, model := strings.TrimSpace(p.CameraMake.String), strings.TrimSpace(p.CameraModel.String)
+	switch {
+	case make_ == "" && model == "":
+		return ""
+	case make_ == "":
+		return model
+	case model == "":
+		return make_
+	case strings.HasPrefix(strings.ToLower(model), strings.ToLower(make_)):
+		return model
+	default:
+		return make_ + " " + model
+	}
 }
 
 func nullStr(ns sql.NullString) *string {
@@ -160,6 +239,7 @@ func nullInt(ni sql.NullInt64) *int64 {
 }
 
 func (p Photo) MarshalJSON() ([]byte, error) {
+	takenAt, takenAtSource := p.EffectiveTakenAt()
 	return json.Marshal(struct {
 		ID             uint64  `json:"id"`
 		ProjectID      uint64  `json:"project_id"`
@@ -175,6 +255,14 @@ func (p Photo) MarshalJSON() ([]byte, error) {
 		Copies         int     `json:"copies"`
 		CreatedAt      string  `json:"created_at"`
 		UpdatedAt      string  `json:"updated_at"`
+		// Capture metadata. TakenAt is always populated — it falls back to
+		// the upload time — and TakenAtSource says which it is.
+		TakenAt       string  `json:"taken_at"`
+		TakenAtSource string  `json:"taken_at_source"`
+		TakenAtEXIF   *string `json:"taken_at_exif"`
+		CameraMake    *string `json:"camera_make"`
+		CameraModel   *string `json:"camera_model"`
+		CameraLabel   string  `json:"camera_label"`
 	}{
 		ID:             p.ID,
 		ProjectID:      p.ProjectID,
@@ -190,27 +278,42 @@ func (p Photo) MarshalJSON() ([]byte, error) {
 		Copies:         max(p.Copies, 1),
 		CreatedAt:      p.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:      p.UpdatedAt.Format(time.RFC3339),
+		TakenAt:        takenAt.Format(time.RFC3339),
+		TakenAtSource:  takenAtSource,
+		TakenAtEXIF:    nullTimeRFC3339(p.TakenAt),
+		CameraMake:     nullStr(p.CameraMake),
+		CameraModel:    nullStr(p.CameraModel),
+		CameraLabel:    p.CameraLabel(),
 	})
 }
 
+// nullTimeRFC3339 renders a nullable timestamp for JSON, nil when absent.
+func nullTimeRFC3339(nt sql.NullTime) *string {
+	if !nt.Valid || nt.Time.IsZero() {
+		return nil
+	}
+	s := nt.Time.Format(time.RFC3339)
+	return &s
+}
+
 type PhotoTransform struct {
-	ID        uint64  `db:"id" json:"id"`
-	PhotoID   uint64  `db:"photo_id" json:"photo_id"`
-	CropX     float64 `db:"crop_x" json:"crop_x"`
-	CropY     float64 `db:"crop_y" json:"crop_y"`
-	CropWidth float64 `db:"crop_width" json:"crop_width"`
+	ID         uint64  `db:"id" json:"id"`
+	PhotoID    uint64  `db:"photo_id" json:"photo_id"`
+	CropX      float64 `db:"crop_x" json:"crop_x"`
+	CropY      float64 `db:"crop_y" json:"crop_y"`
+	CropWidth  float64 `db:"crop_width" json:"crop_width"`
 	CropHeight float64 `db:"crop_height" json:"crop_height"`
-	Rotation  float64 `db:"rotation" json:"rotation"`
+	Rotation   float64 `db:"rotation" json:"rotation"`
 }
 
 type PhotoOverride struct {
-	ID               uint64         `db:"id" json:"id"`
-	PhotoID          uint64         `db:"photo_id" json:"photo_id"`
+	ID               uint64          `db:"id" json:"id"`
+	PhotoID          uint64          `db:"photo_id" json:"photo_id"`
 	Brightness       sql.NullFloat64 `db:"brightness" json:"brightness"`
 	Contrast         sql.NullFloat64 `db:"contrast" json:"contrast"`
 	Saturation       sql.NullFloat64 `db:"saturation" json:"saturation"`
-	OverlayOverrides sql.NullString `db:"overlay_overrides" json:"overlay_overrides"`
-	TextOverrides    sql.NullString `db:"text_overrides" json:"text_overrides"`
+	OverlayOverrides sql.NullString  `db:"overlay_overrides" json:"overlay_overrides"`
+	TextOverrides    sql.NullString  `db:"text_overrides" json:"text_overrides"`
 }
 
 type PrintJob struct {

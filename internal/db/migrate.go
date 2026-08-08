@@ -145,6 +145,55 @@ func appliedMigrations(db *sqlx.DB) (map[string]bool, error) {
 // splitStatements splits SQL text on semicolons, handling basic cases.
 // This doesn't handle semicolons inside string literals, but our migrations
 // are simple DDL/DML that don't contain embedded semicolons in values.
+// splitStatements breaks a migration file into individual statements.
+//
+// Comments are stripped before splitting. A naive Split on ";" treats a
+// semicolon inside a `--` comment as a statement boundary, which chops the
+// following SQL in half and produces a baffling syntax error at migration
+// time — so prose in migration files had to avoid semicolons entirely.
+// Stripping first removes that trap.
 func splitStatements(sql string) []string {
-	return strings.Split(sql, ";")
+	return strings.Split(stripSQLComments(sql), ";")
+}
+
+// stripSQLComments removes `--` line comments, leaving everything else (and
+// the line structure) intact. A `--` inside a single- or double-quoted string
+// is left alone, so statements containing literal values like '--' survive.
+func stripSQLComments(sql string) string {
+	var out strings.Builder
+	out.Grow(len(sql))
+
+	for _, line := range strings.Split(sql, "\n") {
+		var quote rune // 0 when outside a string literal
+		cut := -1
+		runes := []rune(line)
+		for i := 0; i < len(runes); i++ {
+			c := runes[i]
+			switch {
+			case quote != 0:
+				// Inside a literal. Doubled quotes are an escaped quote, not
+				// a close, e.g. 'it''s'.
+				if c == quote {
+					if i+1 < len(runes) && runes[i+1] == quote {
+						i++
+						continue
+					}
+					quote = 0
+				}
+			case c == '\'' || c == '"':
+				quote = c
+			case c == '-' && i+1 < len(runes) && runes[i+1] == '-':
+				cut = i
+			}
+			if cut >= 0 {
+				break
+			}
+		}
+		if cut >= 0 {
+			line = string(runes[:cut])
+		}
+		out.WriteString(line)
+		out.WriteString("\n")
+	}
+	return out.String()
 }

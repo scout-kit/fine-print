@@ -189,6 +189,28 @@ func (q *Queries) GetPhotosByIDs(ctx context.Context, ids []uint64) ([]Photo, er
 	return photos, err
 }
 
+// UpdatePhotoCaptureMetadata records EXIF-derived capture info. Passing a
+// zero takenAt stores NULL, which makes consumers fall back to created_at.
+func (q *Queries) UpdatePhotoCaptureMetadata(ctx context.Context, id uint64, takenAt time.Time, cameraMake, cameraModel string) error {
+	var takenAtArg any
+	if !takenAt.IsZero() {
+		takenAtArg = takenAt
+	}
+	_, err := q.db.ExecContext(ctx,
+		"UPDATE photos SET taken_at = ?, camera_make = ?, camera_model = ? WHERE id = ?",
+		takenAtArg, nullableStr(cameraMake), nullableStr(cameraModel), id)
+	return err
+}
+
+// nullableStr maps "" to a SQL NULL so absent EXIF fields aren't stored as
+// empty strings that later read as "present but blank".
+func nullableStr(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
 func (q *Queries) UpdatePhotoStatus(ctx context.Context, id uint64, statusID uint) error {
 	_, err := q.db.ExecContext(ctx,
 		"UPDATE photos SET status_id = ?, updated_at = ? WHERE id = ?",
@@ -508,9 +530,10 @@ func (q *Queries) DeleteOverlay(ctx context.Context, id uint64) error {
 
 func (q *Queries) CreateTextOverlay(ctx context.Context, t *TextOverlay) error {
 	res, err := q.db.ExecContext(ctx,
-		`INSERT INTO text_overlays (project_id, text, font_family, font_size, color, x, y, opacity, z_order, orientation_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO text_overlays (project_id, text, font_family, font_size, color, x, y, opacity, z_order, orientation_id, source, date_format)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Text, t.FontFamily, t.FontSize, t.Color, t.X, t.Y, t.Opacity, t.ZOrder, t.OrientationID,
+		t.SourceOrDefault(), t.DateFormat,
 	)
 	if err != nil {
 		return err
@@ -550,8 +573,9 @@ func (q *Queries) ListTextOverlaysByProjectOrientation(ctx context.Context, proj
 func (q *Queries) UpdateTextOverlay(ctx context.Context, t *TextOverlay) error {
 	_, err := q.db.ExecContext(ctx,
 		`UPDATE text_overlays SET text = ?, font_family = ?, font_size = ?, color = ?,
-		 x = ?, y = ?, opacity = ?, z_order = ? WHERE id = ?`,
-		t.Text, t.FontFamily, t.FontSize, t.Color, t.X, t.Y, t.Opacity, t.ZOrder, t.ID)
+		 x = ?, y = ?, opacity = ?, z_order = ?, source = ?, date_format = ? WHERE id = ?`,
+		t.Text, t.FontFamily, t.FontSize, t.Color, t.X, t.Y, t.Opacity, t.ZOrder,
+		t.SourceOrDefault(), t.DateFormat, t.ID)
 	return err
 }
 

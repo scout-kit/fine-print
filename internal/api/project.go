@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/scout-kit/fine-print/internal/db"
+	"github.com/scout-kit/fine-print/internal/imaging"
 	"github.com/scout-kit/fine-print/internal/storage"
 )
 
@@ -363,13 +364,23 @@ func (h *Handlers) CreateTextOverlay(w http.ResponseWriter, r *http.Request) {
 		Y             float64 `json:"y"`
 		Opacity       float64 `json:"opacity"`
 		OrientationID uint    `json:"orientation_id"`
+		Source        string  `json:"source"`
+		DateFormat    string  `json:"date_format"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	if req.Text == "" {
+	source, dateFormat, err := normalizeTextSource(req.Source, req.DateFormat)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Date overlays derive their content at render time, so they carry no
+	// literal text — only static overlays need it.
+	if source == db.TextSourceStatic && req.Text == "" {
 		writeError(w, http.StatusBadRequest, "text is required")
 		return
 	}
@@ -398,6 +409,8 @@ func (h *Handlers) CreateTextOverlay(w http.ResponseWriter, r *http.Request) {
 		Y:             req.Y,
 		Opacity:       req.Opacity,
 		OrientationID: orientID,
+		Source:        source,
+		DateFormat:    dateFormat,
 	}
 
 	if err := h.queries.CreateTextOverlay(r.Context(), t); err != nil {
@@ -427,6 +440,8 @@ func (h *Handlers) UpdateTextOverlayHandler(w http.ResponseWriter, r *http.Reque
 		Y          *float64 `json:"y"`
 		Opacity    *float64 `json:"opacity"`
 		ZOrder     *int     `json:"z_order"`
+		Source     *string  `json:"source"`
+		DateFormat *string  `json:"date_format"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -464,6 +479,32 @@ func (h *Handlers) UpdateTextOverlayHandler(w http.ResponseWriter, r *http.Reque
 	}
 	if req.ZOrder != nil {
 		existing.ZOrder = *req.ZOrder
+	}
+
+	// Source and format are validated together: changing the source changes
+	// which format presets are legal, so resolve against the incoming source
+	// when given and the stored one otherwise.
+	if req.Source != nil || req.DateFormat != nil {
+		srcIn := existing.SourceOrDefault()
+		if req.Source != nil {
+			srcIn = *req.Source
+		}
+		fmtIn := existing.DateFormat.String
+		if req.DateFormat != nil {
+			fmtIn = *req.DateFormat
+		}
+		source, dateFormat, verr := normalizeTextSource(srcIn, fmtIn)
+		if verr != nil {
+			writeError(w, http.StatusBadRequest, verr.Error())
+			return
+		}
+		existing.Source = source
+		existing.DateFormat = dateFormat
+	}
+
+	if existing.SourceOrDefault() == db.TextSourceStatic && existing.Text == "" {
+		writeError(w, http.StatusBadRequest, "text is required for a static overlay")
+		return
 	}
 
 	if err := h.queries.UpdateTextOverlay(r.Context(), existing); err != nil {
@@ -557,6 +598,8 @@ func (h *Handlers) CopyTemplateOrientation(w http.ResponseWriter, r *http.Reques
 			Opacity:       t.Opacity,
 			ZOrder:        t.ZOrder,
 			OrientationID: req.To,
+			Source:        t.SourceOrDefault(),
+			DateFormat:    t.DateFormat,
 		})
 	}
 
@@ -647,8 +690,52 @@ func (h *Handlers) CopyProject(w http.ResponseWriter, r *http.Request) {
 			Opacity:       t.Opacity,
 			ZOrder:        t.ZOrder,
 			OrientationID: t.OrientationID,
+			Source:        t.SourceOrDefault(),
+			DateFormat:    t.DateFormat,
 		})
 	}
 
 	writeJSON(w, http.StatusCreated, newProject)
+}
+
+// normalizeTextSource validates a text overlay's content source and format
+// preset together, filling in defaults. Returns the values to store: an empty
+// source becomes "static", and a static overlay never keeps a date format.
+func normalizeTextSource(source, dateFormat string) (string, sql.NullString, error) {
+	if source == "" {
+		source = db.TextSourceStatic
+	}
+	src := imaging.TextSource(source)
+	if !src.Valid() {
+		return "", sql.NullString{}, fmt.Errorf(
+			"source must be one of %q, %q, %q",
+			db.TextSourceStatic, db.TextSourcePhotoDate, db.TextSourcePhotoDateTime)
+	}
+
+	if !src.IsDateSource() {
+		// Drop any format that came along; it would be dead data.
+		return source, sql.NullString{}, nil
+	}
+
+	// Empty format is allowed — the renderer applies the source's default.
+	if dateFormat == "" {
+		return source, sql.NullString{}, nil
+	}
+
+	df := imaging.DateFormat(dateFormat)
+	if !df.Valid() {
+		return "", sql.NullString{}, fmt.Errorf("unknown date_format %q", dateFormat)
+	}
+	// A date-only source must not carry a time-bearing preset, and vice
+	// versa; otherwise the overlay silently prints something the admin
+	// didn't pick in the UI.
+	wantsTime := src == imaging.TextSourcePhotoDateTime
+	if df.IncludesTime() != wantsTime {
+		if wantsTime {
+			return "", sql.NullString{}, fmt.Errorf("date_format %q has no time component; use a datetime preset with source %q", dateFormat, db.TextSourcePhotoDateTime)
+		}
+		return "", sql.NullString{}, fmt.Errorf("date_format %q includes a time; use source %q for that", dateFormat, db.TextSourcePhotoDateTime)
+	}
+
+	return source, sql.NullString{String: dateFormat, Valid: true}, nil
 }
