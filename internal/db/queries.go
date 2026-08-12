@@ -97,7 +97,7 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 func (q *Queries) UpdateProject(ctx context.Context, p *Project) error {
 	_, err := q.db.ExecContext(ctx,
 		"UPDATE projects SET name = ?, brightness = ?, contrast = ?, saturation = ?, visibility_id = ?, project_type_id = ?, booth_countdown = ?, slug = ?, updated_at = ? WHERE id = ?",
-		p.Name, p.Brightness, p.Contrast, p.Saturation, p.VisibilityID, p.ProjectTypeID, p.BoothCountdown, p.Slug, time.Now(), p.ID,
+		p.Name, p.Brightness, p.Contrast, p.Saturation, p.VisibilityID, p.ProjectTypeID, p.BoothCountdown, p.Slug, dbTime(time.Now()), p.ID,
 	)
 	return err
 }
@@ -192,13 +192,9 @@ func (q *Queries) GetPhotosByIDs(ctx context.Context, ids []uint64) ([]Photo, er
 // UpdatePhotoCaptureMetadata records EXIF-derived capture info. Passing a
 // zero takenAt stores NULL, which makes consumers fall back to created_at.
 func (q *Queries) UpdatePhotoCaptureMetadata(ctx context.Context, id uint64, takenAt time.Time, cameraMake, cameraModel string) error {
-	var takenAtArg any
-	if !takenAt.IsZero() {
-		takenAtArg = takenAt
-	}
 	_, err := q.db.ExecContext(ctx,
 		"UPDATE photos SET taken_at = ?, camera_make = ?, camera_model = ? WHERE id = ?",
-		takenAtArg, nullableStr(cameraMake), nullableStr(cameraModel), id)
+		dbWallTime(takenAt), nullableStr(cameraMake), nullableStr(cameraModel), id)
 	return err
 }
 
@@ -211,31 +207,62 @@ func nullableStr(s string) any {
 	return s
 }
 
+// dbTimeLayout is the one format timestamps are written in. It is what SQLite's
+// CURRENT_TIMESTAMP produces for created_at, so the columns sort against each
+// other, and MySQL accepts it for DATETIME.
+//
+// Binding a time.Time directly is what must be avoided: the SQLite driver
+// stores it in Go's String() layout, which includes the zone *name*, and can
+// only read a handful of layouts back. A numerically named zone — exactly what
+// an EXIF offset yields, FixedZone("-04:00", …) — writes a value the driver
+// then refuses to scan, and one such row makes every SELECT * over that table
+// fail.
+const dbTimeLayout = "2006-01-02 15:04:05"
+
+// dbTime binds an instant, normalized to UTC. A zero time becomes SQL NULL.
+func dbTime(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t.UTC().Format(dbTimeLayout)
+}
+
+// dbWallTime binds a clock reading whose zone carries no meaning of its own.
+// An EXIF capture time is what the camera's clock showed, so it is stored as
+// written rather than shifted into UTC — otherwise a date overlay would print
+// an hour the photographer never saw. A zero time becomes SQL NULL.
+func dbWallTime(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t.Format(dbTimeLayout)
+}
+
 func (q *Queries) UpdatePhotoStatus(ctx context.Context, id uint64, statusID uint) error {
 	_, err := q.db.ExecContext(ctx,
 		"UPDATE photos SET status_id = ?, updated_at = ? WHERE id = ?",
-		statusID, time.Now(), id)
+		statusID, dbTime(time.Now()), id)
 	return err
 }
 
 func (q *Queries) UpdatePhotoOriginalKey(ctx context.Context, id uint64, originalKey string) error {
 	_, err := q.db.ExecContext(ctx,
 		"UPDATE photos SET original_key = ?, updated_at = ? WHERE id = ?",
-		originalKey, time.Now(), id)
+		originalKey, dbTime(time.Now()), id)
 	return err
 }
 
 func (q *Queries) UpdatePhotoRendered(ctx context.Context, id uint64, renderedKey string) error {
 	_, err := q.db.ExecContext(ctx,
 		"UPDATE photos SET rendered_key = ?, updated_at = ? WHERE id = ?",
-		renderedKey, time.Now(), id)
+		renderedKey, dbTime(time.Now()), id)
 	return err
 }
 
 func (q *Queries) ClearPhotoRendered(ctx context.Context, id uint64) error {
 	_, err := q.db.ExecContext(ctx,
 		"UPDATE photos SET rendered_key = NULL, updated_at = ? WHERE id = ?",
-		time.Now(), id)
+		dbTime(time.Now()), id)
 	return err
 }
 
@@ -243,14 +270,14 @@ func (q *Queries) ClearProjectRenderedPhotos(ctx context.Context, projectID uint
 	_, err := q.db.ExecContext(ctx,
 		`UPDATE photos SET rendered_key = NULL, updated_at = ?
 		 WHERE project_id = ? AND status_id != ? AND rendered_key IS NOT NULL`,
-		time.Now(), projectID, PhotoStatusPrinted)
+		dbTime(time.Now()), projectID, PhotoStatusPrinted)
 	return err
 }
 
 func (q *Queries) UpdatePhotoCopies(ctx context.Context, id uint64, copies int) error {
 	_, err := q.db.ExecContext(ctx,
 		"UPDATE photos SET copies = ?, updated_at = ? WHERE id = ?",
-		copies, time.Now(), id)
+		copies, dbTime(time.Now()), id)
 	return err
 }
 
@@ -268,7 +295,7 @@ func (q *Queries) UpdatePhotoPreview(ctx context.Context, id uint64, previewKey 
 	_, err := q.db.ExecContext(ctx,
 		`UPDATE photos SET preview_key = ?, original_width = ?, original_height = ?,
 		 file_size = ?, mime_type = ?, updated_at = ? WHERE id = ?`,
-		previewKey, width, height, fileSize, mimeType, time.Now(), id)
+		previewKey, width, height, fileSize, mimeType, dbTime(time.Now()), id)
 	return err
 }
 
@@ -413,7 +440,7 @@ func (q *Queries) ListPrintJobs(ctx context.Context) ([]PrintJob, error) {
 
 func (q *Queries) UpdatePrintJobStatus(ctx context.Context, id uint64, statusID uint, cupsJobID, errorMsg string) error {
 	query := "UPDATE print_jobs SET status_id = ?, updated_at = ?"
-	args := []any{statusID, time.Now()}
+	args := []any{statusID, dbTime(time.Now())}
 
 	if cupsJobID != "" {
 		query += ", cups_job_id = ?"
@@ -425,7 +452,7 @@ func (q *Queries) UpdatePrintJobStatus(ctx context.Context, id uint64, statusID 
 	}
 	if statusID == PrintJobStatusPrinted {
 		query += ", printed_at = ?"
-		args = append(args, time.Now())
+		args = append(args, dbTime(time.Now()))
 	}
 	if statusID == PrintJobStatusPrinting {
 		query += ", attempts = attempts + 1"
@@ -589,7 +616,7 @@ func (q *Queries) DeleteTextOverlay(ctx context.Context, id uint64) error {
 func (q *Queries) CreateAdminSession(ctx context.Context, s *AdminSession) error {
 	res, err := q.db.ExecContext(ctx,
 		"INSERT INTO admin_sessions (token, expires_at) VALUES (?, ?)",
-		s.Token, s.ExpiresAt,
+		s.Token, dbTime(s.ExpiresAt),
 	)
 	if err != nil {
 		return err
@@ -606,7 +633,7 @@ func (q *Queries) GetAdminSessionByToken(ctx context.Context, token string) (*Ad
 	var s AdminSession
 	err := q.db.GetContext(ctx, &s,
 		"SELECT * FROM admin_sessions WHERE token = ? AND expires_at > ?",
-		token, time.Now())
+		token, dbTime(time.Now()))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -619,7 +646,7 @@ func (q *Queries) DeleteAdminSession(ctx context.Context, token string) error {
 }
 
 func (q *Queries) DeleteExpiredSessions(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, "DELETE FROM admin_sessions WHERE expires_at <= ?", time.Now())
+	_, err := q.db.ExecContext(ctx, "DELETE FROM admin_sessions WHERE expires_at <= ?", dbTime(time.Now()))
 	return err
 }
 

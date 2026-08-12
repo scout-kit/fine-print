@@ -148,7 +148,7 @@ func (h *Handlers) ListPhotos(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list photos")
+		writeServerError(w, "failed to list photos", err)
 		return
 	}
 

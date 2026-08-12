@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -89,8 +90,21 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 	json.NewEncoder(w).Encode(data)
 }
 
+// writeError sends a JSON error. A 5xx is always logged: the client is told
+// only that something failed, so without this a server-side fault leaves no
+// trace at all.
 func writeError(w http.ResponseWriter, status int, msg string) {
+	if status >= 500 {
+		log.Printf("HTTP %d: %s", status, msg)
+	}
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// writeServerError is writeError for the common case of a failure with an
+// underlying error worth logging — the cause reaches the log, never the client.
+func writeServerError(w http.ResponseWriter, msg string, err error) {
+	log.Printf("%s: %v", msg, err)
+	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": msg})
 }
 
 func readJSON(r *http.Request, dst any) error {
