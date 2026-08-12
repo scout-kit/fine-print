@@ -2,13 +2,17 @@ package api
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/scout-kit/fine-print/internal/db"
@@ -72,6 +76,26 @@ func (h *Handlers) UploadPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fingerprint the bytes and check whether this project already has them.
+	// Done before any record is written so a guest who backs out at the
+	// warning leaves nothing behind.
+	hash, err := hashUpload(file)
+	if err != nil {
+		log.Printf("Error hashing upload: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to read photo")
+		return
+	}
+
+	if !formBool(r, "allow_duplicate") {
+		existing, err := h.queries.FindPhotoByContentHash(r.Context(), projectID, hash)
+		if err != nil {
+			log.Printf("Error checking for duplicate photo: %v", err)
+		} else if existing != nil {
+			writeDuplicateWarning(w, existing, sessionID)
+			return
+		}
+	}
+
 	// Create photo record
 	ext := filepath.Ext(header.Filename)
 	photo := &db.Photo{
@@ -79,6 +103,7 @@ func (h *Handlers) UploadPhoto(w http.ResponseWriter, r *http.Request) {
 		SessionID:   sessionID,
 		OriginalKey: "", // Will be set after we know the ID
 		StatusID:    db.PhotoStatusUploaded,
+		ContentHash: sql.NullString{String: hash, Valid: hash != ""},
 	}
 
 	if err := h.queries.CreatePhoto(r.Context(), photo); err != nil {
@@ -110,6 +135,46 @@ func (h *Handlers) UploadPhoto(w http.ResponseWriter, r *http.Request) {
 		"id":     photo.ID,
 		"status": db.PhotoStatusName(photo.StatusID),
 	})
+}
+
+// hashUpload returns the SHA-256 of an uploaded file and rewinds it so the
+// caller can still store the bytes.
+func hashUpload(file multipart.File) (string, error) {
+	sum := sha256.New()
+	if _, err := io.Copy(sum, file); err != nil {
+		return "", err
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(sum.Sum(nil)), nil
+}
+
+// formBool reads a multipart form field as a boolean, treating anything
+// unparseable as false.
+func formBool(r *http.Request, field string) bool {
+	v, err := strconv.ParseBool(r.FormValue(field))
+	return err == nil && v
+}
+
+// writeDuplicateWarning reports that the project already holds these exact
+// bytes. It is a warning, not a rejection: the client may repeat the upload
+// with allow_duplicate=true to register a second copy anyway.
+//
+// The existing photo's id is disclosed only to the guest who uploaded it, so
+// the response can't be used to enumerate other guests' photos.
+func writeDuplicateWarning(w http.ResponseWriter, existing *db.Photo, sessionID string) {
+	mine := existing.SessionID == sessionID
+	body := map[string]any{
+		"error":       "this photo is already in this project",
+		"duplicate":   true,
+		"mine":        mine,
+		"uploaded_at": existing.CreatedAt.Format(time.RFC3339),
+	}
+	if mine {
+		body["photo_id"] = existing.ID
+	}
+	writeJSON(w, http.StatusConflict, body)
 }
 
 func (h *Handlers) generatePreview(photo *db.Photo) {

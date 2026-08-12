@@ -2,7 +2,9 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { getProjectBySlug, uploadPhoto, PROJECT_TYPE_BOOTH, type ProjectResponse } from '$lib/api';
+	import { getProjectBySlug, PROJECT_TYPE_BOOTH, type ProjectResponse } from '$lib/api';
+	import DuplicateWarning from '$lib/DuplicateWarning.svelte';
+	import { uploadBatch, type DuplicateDecision, type DuplicatePrompt } from '$lib/upload';
 
 	const slug = $derived(page.params.slug);
 	let project: ProjectResponse | null = $state(null);
@@ -25,6 +27,22 @@
 
 	let uploadProgress = $state('');
 
+	// Set while the duplicate warning is up; resolveDuplicate hands the guest's
+	// answer back to the paused upload loop.
+	let duplicate: DuplicatePrompt | null = $state(null);
+	let resolveDuplicate: ((d: DuplicateDecision) => void) | null = null;
+
+	function askDuplicate(prompt: DuplicatePrompt): Promise<DuplicateDecision> {
+		duplicate = prompt;
+		return new Promise(resolve => { resolveDuplicate = resolve; });
+	}
+
+	function decideDuplicate(choice: 'upload' | 'skip', applyToAll: boolean) {
+		duplicate = null;
+		resolveDuplicate?.({ choice, applyToAll });
+		resolveDuplicate = null;
+	}
+
 	async function handleFiles(files: FileList | File[]) {
 		if (!project) return;
 		const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
@@ -32,22 +50,22 @@
 
 		uploading = true;
 		error = '';
-		const uploadedIds: number[] = [];
 
-		for (let i = 0; i < imageFiles.length; i++) {
-			uploadProgress = `Uploading ${i + 1} of ${imageFiles.length}...`;
-			try {
-				const result = await uploadPhoto(imageFiles[i], project.project.id);
-				uploadedIds.push(result.id);
-			} catch { /* skip failed */ }
-		}
+		const { ids, skipped } = await uploadBatch(imageFiles, project.project.id, {
+			onProgress: (i, total) => { uploadProgress = `Uploading ${i} of ${total}...`; },
+			onDuplicate: askDuplicate
+		});
 
 		uploading = false;
 		uploadProgress = '';
 
-		if (uploadedIds.length === 0) { error = 'All uploads failed'; return; }
-		if (uploadedIds.length === 1) goto(`/edit?id=${uploadedIds[0]}`);
-		else goto(`/review?ids=${uploadedIds.join(',')}`);
+		if (ids.length === 0) {
+			// Skipping every duplicate is a deliberate choice, not a failure.
+			error = skipped === imageFiles.length ? '' : 'All uploads failed';
+			return;
+		}
+		if (ids.length === 1) goto(`/edit?id=${ids[0]}`);
+		else goto(`/review?ids=${ids.join(',')}`);
 	}
 
 	function onFileSelect(e: Event) {
@@ -102,6 +120,15 @@
 				</label>
 			{/if}
 		</div>
+	{/if}
+
+	{#if duplicate}
+		<DuplicateWarning
+			fileName={duplicate.fileName}
+			info={duplicate.info}
+			remaining={duplicate.remaining}
+			onDecide={decideDuplicate}
+		/>
 	{/if}
 
 	<nav class="bottom-nav">

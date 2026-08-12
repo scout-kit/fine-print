@@ -130,9 +130,9 @@ func (q *Queries) DeleteProject(ctx context.Context, id uint64) error {
 
 func (q *Queries) CreatePhoto(ctx context.Context, p *Photo) error {
 	res, err := q.db.ExecContext(ctx,
-		`INSERT INTO photos (project_id, session_id, original_key, status_id)
-		 VALUES (?, ?, ?, ?)`,
-		p.ProjectID, p.SessionID, p.OriginalKey, p.StatusID,
+		`INSERT INTO photos (project_id, session_id, original_key, status_id, content_hash)
+		 VALUES (?, ?, ?, ?, ?)`,
+		p.ProjectID, p.SessionID, p.OriginalKey, p.StatusID, p.ContentHash,
 	)
 	if err != nil {
 		return err
@@ -173,6 +173,25 @@ func (q *Queries) ListPhotosByProject(ctx context.Context, projectID uint64) ([]
 	err := q.db.SelectContext(ctx, &photos,
 		"SELECT * FROM photos WHERE project_id = ? ORDER BY created_at ASC", projectID)
 	return photos, err
+}
+
+// FindPhotoByContentHash returns the earliest photo in a project whose bytes
+// hash to the given value, or nil when the project has no copy of it yet.
+// Scoped to the project because the same photo in two different projects is
+// two different prints, not a duplicate.
+func (q *Queries) FindPhotoByContentHash(ctx context.Context, projectID uint64, hash string) (*Photo, error) {
+	if hash == "" {
+		return nil, nil
+	}
+	var p Photo
+	err := q.db.GetContext(ctx, &p,
+		`SELECT * FROM photos
+		 WHERE project_id = ? AND content_hash = ?
+		 ORDER BY id ASC LIMIT 1`, projectID, hash)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return &p, err
 }
 
 func (q *Queries) GetPhotosByIDs(ctx context.Context, ids []uint64) ([]Photo, error) {
