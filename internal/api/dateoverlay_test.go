@@ -244,7 +244,7 @@ func TestUpdatePhotoCaptureMetadata_RoundTrip(t *testing.T) {
 	}
 
 	captured := time.Date(2026, time.March, 14, 14, 31, 7, 0, time.UTC)
-	if err := q.UpdatePhotoCaptureMetadata(ctx, photo.ID, captured, "Canon", "Canon EOS R6"); err != nil {
+	if err := q.UpdatePhotoCaptureMetadata(ctx, photo.ID, captured, db.TakenAtSourceEXIF, "Canon", "Canon EOS R6"); err != nil {
 		t.Fatalf("storing metadata: %v", err)
 	}
 
@@ -278,7 +278,7 @@ func TestUpdatePhotoCaptureMetadata_ZeroTimeStoresNull(t *testing.T) {
 	if err := q.CreatePhoto(ctx, photo); err != nil {
 		t.Fatalf("creating photo: %v", err)
 	}
-	if err := q.UpdatePhotoCaptureMetadata(ctx, photo.ID, time.Time{}, "", ""); err != nil {
+	if err := q.UpdatePhotoCaptureMetadata(ctx, photo.ID, time.Time{}, "", "", ""); err != nil {
 		t.Fatalf("storing metadata: %v", err)
 	}
 

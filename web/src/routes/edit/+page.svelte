@@ -4,7 +4,7 @@
 	import { page } from '$app/state';
 	import ImageEditor from '$lib/ImageEditor.svelte';
 	import { previewUrl, photoMetadata, type PhotoMetadata } from '$lib/api';
-	import { formatTakenAt, isExifDate } from '$lib/photometa';
+	import { formatTakenAt, isExifDate, takenAtSourceLabel } from '$lib/photometa';
 
 	const photoId = $derived(Number(page.url.searchParams.get('id')));
 	const returnUrl = $derived(page.url.searchParams.get('return') || '');
@@ -55,10 +55,10 @@
 	</header>
 
 	{#if meta}
-		<p class="taken-line" title={isExifDate(meta) ? 'Capture date from photo metadata' : 'No capture date in this file — showing the time it was uploaded'}>
+		<p class="taken-line" title={isExifDate(meta) ? 'Capture date from photo metadata' : takenAtSourceLabel(meta)}>
 			Taken {formatTakenAt(meta)}
 			{#if !isExifDate(meta)}
-				<span class="taken-note">(upload time — this photo has no capture date)</span>
+				<span class="taken-note">({takenAtSourceLabel(meta)})</span>
 			{/if}
 			{#if meta.camera_label}
 				<span class="taken-note">· {meta.camera_label}</span>

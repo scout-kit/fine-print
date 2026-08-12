@@ -208,12 +208,16 @@ func (q *Queries) GetPhotosByIDs(ctx context.Context, ids []uint64) ([]Photo, er
 	return photos, err
 }
 
-// UpdatePhotoCaptureMetadata records EXIF-derived capture info. Passing a
-// zero takenAt stores NULL, which makes consumers fall back to created_at.
-func (q *Queries) UpdatePhotoCaptureMetadata(ctx context.Context, id uint64, takenAt time.Time, cameraMake, cameraModel string) error {
+// UpdatePhotoCaptureMetadata records the capture info read from a file, along
+// with which of its timestamps the date came from. Passing a zero takenAt
+// stores NULL, which makes consumers fall back to created_at.
+func (q *Queries) UpdatePhotoCaptureMetadata(ctx context.Context, id uint64, takenAt time.Time, source, cameraMake, cameraModel string) error {
+	if takenAt.IsZero() {
+		source = ""
+	}
 	_, err := q.db.ExecContext(ctx,
-		"UPDATE photos SET taken_at = ?, camera_make = ?, camera_model = ? WHERE id = ?",
-		dbWallTime(takenAt), nullableStr(cameraMake), nullableStr(cameraModel), id)
+		"UPDATE photos SET taken_at = ?, taken_at_source = ?, camera_make = ?, camera_model = ? WHERE id = ?",
+		dbWallTime(takenAt), nullableStr(source), nullableStr(cameraMake), nullableStr(cameraModel), id)
 	return err
 }
 

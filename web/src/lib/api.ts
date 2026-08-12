@@ -79,6 +79,10 @@ export function uploadPhoto(
 	form.append('photo', file);
 	form.append('project_id', String(projectId));
 	if (allowDuplicate) form.append('allow_duplicate', 'true');
+	// Last-resort date for files whose metadata carries no timestamp — common
+	// for anything exported or edited on a desktop. The server prefers the
+	// file's own EXIF/IPTC and labels this one as the guess it is.
+	if (file.lastModified) form.append('file_modified', String(file.lastModified));
 	return request('POST', '/photos', form);
 }
 
@@ -471,9 +475,9 @@ export interface Photo {
 	mime_type: string | null;
 	/** Capture time to display. Always set — falls back to the upload time. */
 	taken_at: string;
-	/** Which timestamp taken_at actually is: "exif" or "upload". */
+	/** Which timestamp taken_at actually is. */
 	taken_at_source: TakenAtSource;
-	/** The EXIF timestamp alone, null when the file carried none. */
+	/** The metadata timestamp alone, null when the file carried none. */
 	taken_at_exif: string | null;
 	camera_make: string | null;
 	camera_model: string | null;
@@ -481,7 +485,14 @@ export interface Photo {
 	camera_label: string;
 }
 
-export type TakenAtSource = 'exif' | 'upload';
+/**
+ * Where a photo's date came from, strongest first:
+ * - `exif`   the camera's own capture time
+ * - `iptc`   a DateCreated left by a desktop editor that stripped the EXIF
+ * - `file`   the uploaded file's modification time — a guess, not a record
+ * - `upload` nothing in the file, so the upload time stands in
+ */
+export type TakenAtSource = 'exif' | 'iptc' | 'file' | 'upload';
 
 /** Capture metadata for a single photo, for the guest editor. */
 export interface PhotoMetadata {

@@ -2,10 +2,11 @@
 	import { afterNavigate } from '$app/navigation';
 	import {
 		previewUrl, downloadOriginalUrl, downloadRenderedUrl, renderPreviewUrl,
-		photoStatusName, approvePhoto, rejectPhoto, unapprovePhoto, deletePhoto, reprintPhoto
+		photoStatusName, approvePhoto, rejectPhoto, unapprovePhoto, deletePhoto, reprintPhoto,
+		type TakenAtSource
 	} from '$lib/api';
 	import { isAdmin } from '$lib/stores';
-	import { metaRows, formatTakenAtShort, isExifDate } from '$lib/photometa';
+	import { metaRows, formatTakenAtShort, isExifDate, takenAtSourceLabel } from '$lib/photometa';
 
 	// Accepts any object with these fields — works with Photo and GalleryPhoto
 	interface ModalPhoto {
@@ -22,7 +23,7 @@
 		// Capture metadata. Optional so callers holding a partial photo object
 		// still typecheck; the helpers fall back to created_at.
 		taken_at?: string;
-		taken_at_source?: 'exif' | 'upload';
+		taken_at_source?: TakenAtSource;
 		taken_at_exif?: string | null;
 		camera_label?: string;
 		original_width?: number | null;
@@ -109,7 +110,7 @@
 			{#if (photo.copies || 1) > 1}
 				<span class="meta copies-badge">{photo.copies}x</span>
 			{/if}
-			<span class="meta taken-at" style="margin-left:auto" title={isExifDate(photo) ? 'Capture date from photo metadata' : 'No capture date in file — showing upload time'}>
+			<span class="meta taken-at" style="margin-left:auto" title={isExifDate(photo) ? 'Capture date from photo metadata' : takenAtSourceLabel(photo)}>
 				{formatTakenAtShort(photo)}
 				{#if !isExifDate(photo)}<span class="approx" aria-label="approximate">~</span>{/if}
 			</span>

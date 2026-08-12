@@ -51,7 +51,7 @@ func TestCaptureMetadata_NumericZoneStaysReadable(t *testing.T) {
 
 	// time.FixedZone("-04:00", …) is exactly what parseEXIFOffset builds.
 	taken := time.Date(2026, 8, 6, 9, 6, 37, 0, time.FixedZone("-04:00", -4*3600))
-	if err := q.UpdatePhotoCaptureMetadata(ctx, photo.ID, taken, "Canon", "EOS R6"); err != nil {
+	if err := q.UpdatePhotoCaptureMetadata(ctx, photo.ID, taken, db.TakenAtSourceEXIF, "Canon", "EOS R6"); err != nil {
 		t.Fatalf("storing capture metadata: %v", err)
 	}
 
@@ -82,7 +82,7 @@ func TestCaptureMetadata_NumericZoneReadableEverywhere(t *testing.T) {
 	photo := newTestPhoto(t, q)
 
 	taken := time.Date(2026, 8, 6, 9, 6, 37, 0, time.FixedZone("-04:00", -4*3600))
-	if err := q.UpdatePhotoCaptureMetadata(ctx, photo.ID, taken, "Canon", "EOS R6"); err != nil {
+	if err := q.UpdatePhotoCaptureMetadata(ctx, photo.ID, taken, db.TakenAtSourceEXIF, "Canon", "EOS R6"); err != nil {
 		t.Fatalf("storing capture metadata: %v", err)
 	}
 	// Status updates and previews write timestamps of their own.
@@ -114,7 +114,7 @@ func TestCaptureMetadata_ZeroTimeStoresNull(t *testing.T) {
 	ctx := context.Background()
 	photo := newTestPhoto(t, q)
 
-	if err := q.UpdatePhotoCaptureMetadata(ctx, photo.ID, time.Time{}, "Canon", ""); err != nil {
+	if err := q.UpdatePhotoCaptureMetadata(ctx, photo.ID, time.Time{}, "", "Canon", ""); err != nil {
 		t.Fatalf("storing capture metadata: %v", err)
 	}
 
@@ -125,6 +125,76 @@ func TestCaptureMetadata_ZeroTimeStoresNull(t *testing.T) {
 	if got.TakenAt.Valid {
 		t.Errorf("taken_at = %v, want NULL", got.TakenAt.Time)
 	}
+}
+
+// The recorded source travels with the date, so the UI can qualify one the
+// camera never took.
+func TestCaptureMetadata_SourceRoundTrips(t *testing.T) {
+	q := newTestDB(t)
+	ctx := context.Background()
+
+	for _, source := range []string{db.TakenAtSourceEXIF, db.TakenAtSourceIPTC, db.TakenAtSourceFile} {
+		photo := newTestPhoto(t, q)
+		taken := time.Date(2022, 10, 15, 8, 15, 0, 0, time.UTC)
+		if err := q.UpdatePhotoCaptureMetadata(ctx, photo.ID, taken, source, "", ""); err != nil {
+			t.Fatalf("%s: storing capture metadata: %v", source, err)
+		}
+
+		got, err := q.GetPhoto(ctx, photo.ID)
+		if err != nil {
+			t.Fatalf("%s: reading photo back: %v", source, err)
+		}
+		at, gotSource := got.EffectiveTakenAt()
+		if gotSource != source {
+			t.Errorf("source = %q, want %q", gotSource, source)
+		}
+		if !at.Equal(taken) {
+			t.Errorf("%s: takenAt = %v, want %v", source, at, taken)
+		}
+	}
+}
+
+// Rows written before the source column existed carry a date that could only
+// have come from EXIF, and must keep reading that way.
+func TestCaptureMetadata_MissingSourceReadsAsEXIF(t *testing.T) {
+	q := newTestDB(t)
+	ctx := context.Background()
+	photo := newTestPhoto(t, q)
+
+	taken := time.Date(2024, 3, 14, 14, 31, 0, 0, time.UTC)
+	if err := q.UpdatePhotoCaptureMetadata(ctx, photo.ID, taken, "", "", ""); err != nil {
+		t.Fatalf("storing capture metadata: %v", err)
+	}
+
+	got, err := q.GetPhoto(ctx, photo.ID)
+	if err != nil {
+		t.Fatalf("reading photo back: %v", err)
+	}
+	if _, source := got.EffectiveTakenAt(); source != db.TakenAtSourceEXIF {
+		t.Errorf("source = %q, want %q", source, db.TakenAtSourceEXIF)
+	}
+}
+
+// With no date at all, the upload time stands in and says so.
+func TestCaptureMetadata_NoDateReportsUploadSource(t *testing.T) {
+	q := newTestDB(t)
+	photo, err := newTestDBPhotoRead(t, q)
+	if err != nil {
+		t.Fatalf("reading photo back: %v", err)
+	}
+	at, source := photo.EffectiveTakenAt()
+	if source != db.TakenAtSourceUpload {
+		t.Errorf("source = %q, want %q", source, db.TakenAtSourceUpload)
+	}
+	if !at.Equal(photo.CreatedAt) {
+		t.Errorf("takenAt = %v, want the upload time %v", at, photo.CreatedAt)
+	}
+}
+
+func newTestDBPhotoRead(t *testing.T, q *db.Queries) (*db.Photo, error) {
+	t.Helper()
+	photo := newTestPhoto(t, q)
+	return q.GetPhoto(context.Background(), photo.ID)
 }
 
 // Admin sessions are looked up with an expiry comparison, so their timestamps
