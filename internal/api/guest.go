@@ -124,8 +124,9 @@ func (h *Handlers) UploadPhoto(w http.ResponseWriter, r *http.Request) {
 	photo.OriginalKey = originalKey
 	h.queries.UpdatePhotoOriginalKey(r.Context(), photo.ID, originalKey)
 
-	// Generate preview asynchronously
-	go h.generatePreview(photo)
+	// Generate preview asynchronously. The browser-reported file time rides
+	// along as the last-resort date for files whose metadata has no timestamp.
+	go h.generatePreview(photo, formFileModified(r))
 
 	// Calculate default center crop transform
 	// We'll set this after preview generation knows the dimensions
@@ -157,6 +158,24 @@ func formBool(r *http.Request, field string) bool {
 	return err == nil && v
 }
 
+// formFileModified reads the browser-reported modification time of the
+// uploaded file (File.lastModified, epoch milliseconds). Zero when absent or
+// implausible — the value comes from the client, so a date before photography
+// or in the future is discarded rather than printed.
+func formFileModified(r *http.Request) time.Time {
+	ms, err := strconv.ParseInt(r.FormValue("file_modified"), 10, 64)
+	if err != nil || ms <= 0 {
+		return time.Time{}
+	}
+	t := time.UnixMilli(ms)
+	if t.Year() < 1900 || t.After(time.Now().Add(24*time.Hour)) {
+		return time.Time{}
+	}
+	// The browser reports an instant; what gets printed is a wall clock, so
+	// it is read in the kiosk's own zone — the one the guest is standing in.
+	return t.Local()
+}
+
 // writeDuplicateWarning reports that the project already holds these exact
 // bytes. It is a warning, not a rejection: the client may repeat the upload
 // with allow_duplicate=true to register a second copy anyway.
@@ -177,12 +196,14 @@ func writeDuplicateWarning(w http.ResponseWriter, existing *db.Photo, sessionID 
 	writeJSON(w, http.StatusConflict, body)
 }
 
-func (h *Handlers) generatePreview(photo *db.Photo) {
+func (h *Handlers) generatePreview(photo *db.Photo, fileModified time.Time) {
 	originalPath := h.store.Path(storage.BucketOriginals, photo.OriginalKey)
 
 	// Read capture metadata from the file as uploaded, before any HEIC
-	// conversion — converters routinely drop or rewrite EXIF.
-	h.extractCaptureMetadata(photo, originalPath)
+	// conversion — converters routinely drop or rewrite EXIF. The file time is
+	// held back until the converted copy has had its turn, so a HEIC's own
+	// timestamp still wins over it.
+	h.extractCaptureMetadata(photo, originalPath, time.Time{})
 
 	// Convert HEIC to JPEG if needed
 	if imaging.IsHEIC(photo.OriginalKey) {
@@ -198,8 +219,14 @@ func (h *Handlers) generatePreview(photo *db.Photo) {
 		// original yielded nothing, retry on the converted JPEG — sips and
 		// heif-convert both carry the capture time across.
 		if !photo.TakenAt.Valid {
-			h.extractCaptureMetadata(photo, originalPath)
+			h.extractCaptureMetadata(photo, originalPath, time.Time{})
 		}
+	}
+
+	// Every reading of the file itself has now been tried, so the guest's file
+	// time is the only thing left to date the photo by.
+	if !photo.TakenAt.Valid && !fileModified.IsZero() {
+		h.extractCaptureMetadata(photo, originalPath, fileModified)
 	}
 
 	img, err := h.pipeline.DecodeFromFile(originalPath)
@@ -243,33 +270,44 @@ func (h *Handlers) generatePreview(photo *db.Photo) {
 	)
 }
 
-// extractCaptureMetadata reads EXIF from path and persists what it finds onto
-// photo. Absent or unreadable EXIF is not an error — the photo simply keeps a
-// NULL taken_at and consumers fall back to the upload time. Updates the
-// in-memory photo too, so a caller can tell whether a timestamp was found.
-func (h *Handlers) extractCaptureMetadata(photo *db.Photo, path string) {
+// extractCaptureMetadata reads the capture info out of the file at path and
+// persists what it finds onto photo. A file with no timestamp is not an error
+// — the photo keeps a NULL taken_at and consumers fall back to the upload
+// time — unless fileModified is set, which stands in as a last resort and is
+// recorded as such. Updates the in-memory photo too, so a caller can tell
+// whether a timestamp was found.
+func (h *Handlers) extractCaptureMetadata(photo *db.Photo, path string, fileModified time.Time) {
 	md, err := imaging.ReadMetadata(path)
 	if err != nil {
-		// A file with no EXIF at all is entirely normal (screenshots, some
+		// A file with no metadata at all is entirely normal (screenshots, some
 		// booth captures), so it's logged only at a low level of interest.
 		if !errors.Is(err, imaging.ErrNoEXIF) {
 			log.Printf("Photo %d: reading exif: %v", photo.ID, err)
 		}
-		return
 	}
-	if !md.HasTakenAt() && md.CameraMake == "" && md.CameraModel == "" {
+
+	takenAt, source := md.TakenAt, string(md.TakenAtSource)
+	if takenAt.IsZero() && !fileModified.IsZero() {
+		// Nothing in the file itself. What the guest's filesystem says is a
+		// guess, but for a photo that has sat on a desktop it is usually the
+		// right one — and it is labelled so nothing implies otherwise.
+		takenAt, source = fileModified, db.TakenAtSourceFile
+	}
+
+	if takenAt.IsZero() && md.CameraMake == "" && md.CameraModel == "" {
 		return
 	}
 
 	if err := h.queries.UpdatePhotoCaptureMetadata(
-		contextBackground(), photo.ID, md.TakenAt, md.CameraMake, md.CameraModel,
+		contextBackground(), photo.ID, takenAt, source, md.CameraMake, md.CameraModel,
 	); err != nil {
 		log.Printf("Photo %d: storing capture metadata: %v", photo.ID, err)
 		return
 	}
 
-	if md.HasTakenAt() {
-		photo.TakenAt = sql.NullTime{Time: md.TakenAt, Valid: true}
+	if !takenAt.IsZero() {
+		photo.TakenAt = sql.NullTime{Time: takenAt, Valid: true}
+		photo.TakenAtSource = sql.NullString{String: source, Valid: source != ""}
 	}
 	photo.CameraMake = sql.NullString{String: md.CameraMake, Valid: md.CameraMake != ""}
 	photo.CameraModel = sql.NullString{String: md.CameraModel, Valid: md.CameraModel != ""}

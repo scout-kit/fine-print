@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { renderPreviewUrl, previewUrl, photoStatusName } from '$lib/api';
+	import { renderPreviewUrl, previewUrl, photoStatusName, type TakenAtSource } from '$lib/api';
 	import { formatTakenAtShort, isExifDate } from '$lib/photometa';
 
 	interface ThumbPhoto {
@@ -9,7 +9,7 @@
 		has_preview?: boolean;
 		created_at?: string;
 		taken_at?: string;
-		taken_at_source?: 'exif' | 'upload';
+		taken_at_source?: TakenAtSource;
 	}
 
 	interface Props {

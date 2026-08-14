@@ -17,16 +17,23 @@ type DateSource string
 const (
 	// DateSourceEXIF means the camera recorded a capture time.
 	DateSourceEXIF DateSource = "exif"
-	// DateSourceUpload means no EXIF timestamp was available and the
+	// DateSourceIPTC means the EXIF timestamp was absent and the date came
+	// from an IPTC DateCreated — what a desktop editor leaves behind when it
+	// strips EXIF on export.
+	DateSourceIPTC DateSource = "iptc"
+	// DateSourceUpload means no timestamp was available in the file and the
 	// caller should fall back to the upload time.
 	DateSourceUpload DateSource = "upload"
 )
 
-// Metadata is the subset of EXIF the kiosk cares about.
+// Metadata is the subset of a file's metadata the kiosk cares about.
 type Metadata struct {
 	// TakenAt is the capture time, in the camera's local wall-clock time.
 	// Zero when the file carried no usable timestamp.
 	TakenAt time.Time
+	// TakenAtSource says which of the file's timestamps TakenAt came from.
+	// Empty when there was none.
+	TakenAtSource DateSource
 	// CameraMake and CameraModel are empty when absent.
 	CameraMake  string
 	CameraModel string
@@ -65,8 +72,13 @@ func ReadMetadata(path string) (Metadata, error) {
 	rawExif, err := exif.SearchFileAndExtractExif(path)
 	if err != nil {
 		// The library returns its own sentinel for "scanned the whole file,
-		// found no EXIF marker".
+		// found no EXIF marker". Such a file may still carry an IPTC date —
+		// desktop editors strip EXIF and keep IPTC — so try that before
+		// giving up.
 		if errors.Is(err, exif.ErrNoExif) {
+			if t, iptcErr := readIPTCTakenAt(path); iptcErr == nil {
+				return Metadata{TakenAt: t, TakenAtSource: DateSourceIPTC}, nil
+			}
 			return Metadata{}, ErrNoEXIF
 		}
 		return Metadata{}, fmt.Errorf("extracting exif from %s: %w", path, err)
@@ -106,7 +118,17 @@ func ReadMetadata(path string) (Metadata, error) {
 		}
 		if t, err := parseEXIFTime(raw, found[tagOffsetTimeOrig]); err == nil {
 			md.TakenAt = t
+			md.TakenAtSource = DateSourceEXIF
 			break
+		}
+	}
+
+	// An EXIF block is often present but dateless on an exported file — it
+	// keeps only the pixel dimensions. IPTC is where the editor left the date.
+	if !md.HasTakenAt() {
+		if t, err := readIPTCTakenAt(path); err == nil {
+			md.TakenAt = t
+			md.TakenAtSource = DateSourceIPTC
 		}
 	}
 

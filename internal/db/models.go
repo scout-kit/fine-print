@@ -208,11 +208,14 @@ type Photo struct {
 	MimeType       sql.NullString `db:"mime_type" json:"-"`
 	StatusID       uint           `db:"status_id" json:"-"`
 	Copies         int            `db:"copies" json:"-"`
-	// TakenAt is the EXIF capture time. NULL when the file carried no usable
-	// timestamp — consumers fall back to CreatedAt (the upload time).
-	TakenAt     sql.NullTime   `db:"taken_at" json:"-"`
-	CameraMake  sql.NullString `db:"camera_make" json:"-"`
-	CameraModel sql.NullString `db:"camera_model" json:"-"`
+	// TakenAt is the capture time read from the file. NULL when it carried no
+	// usable timestamp — consumers fall back to CreatedAt (the upload time).
+	TakenAt sql.NullTime `db:"taken_at" json:"-"`
+	// TakenAtSource records which of the file's timestamps TakenAt came from,
+	// so a date the camera never recorded can be shown as approximate.
+	TakenAtSource sql.NullString `db:"taken_at_source" json:"-"`
+	CameraMake    sql.NullString `db:"camera_make" json:"-"`
+	CameraModel   sql.NullString `db:"camera_model" json:"-"`
 	// ContentHash is the SHA-256 of the file as uploaded, used to recognize a
 	// re-upload of the same photo. NULL for photos stored before hashing
 	// existed.
@@ -221,15 +224,38 @@ type Photo struct {
 	UpdatedAt   time.Time      `db:"updated_at" json:"-"`
 }
 
+// Where a photo's timestamp came from, weakest last. Anything other than
+// TakenAtSourceEXIF and TakenAtSourceIPTC is a stand-in the UI marks as
+// approximate rather than implying the camera recorded it.
+const (
+	// TakenAtSourceEXIF is the camera's own capture time.
+	TakenAtSourceEXIF = "exif"
+	// TakenAtSourceIPTC is a DateCreated left by a desktop editor on a file
+	// whose EXIF was stripped in export.
+	TakenAtSourceIPTC = "iptc"
+	// TakenAtSourceFile is the uploaded file's modification time, reported by
+	// the browser. Usually right for a photo that has sat on a desktop, wrong
+	// for one that was re-downloaded or copied without preserving the time.
+	TakenAtSourceFile = "file"
+	// TakenAtSourceUpload means the file offered nothing and the upload time
+	// stands in.
+	TakenAtSourceUpload = "upload"
+)
+
 // EffectiveTakenAt returns the timestamp to print and display, along with
-// where it came from. EXIF wins; otherwise the upload time stands in, and the
-// "upload" source is reported so the UI can say so rather than implying the
-// camera recorded it.
+// where it came from. A stored capture time wins; otherwise the upload time
+// stands in.
 func (p Photo) EffectiveTakenAt() (time.Time, string) {
 	if p.TakenAt.Valid && !p.TakenAt.Time.IsZero() {
-		return p.TakenAt.Time, "exif"
+		source := p.TakenAtSource.String
+		if source == "" {
+			// Written before the source was recorded, when EXIF was the only
+			// thing that could have produced a capture time.
+			source = TakenAtSourceEXIF
+		}
+		return p.TakenAt.Time, source
 	}
-	return p.CreatedAt, "upload"
+	return p.CreatedAt, TakenAtSourceUpload
 }
 
 // CameraLabel joins make and model into one display string, avoiding the

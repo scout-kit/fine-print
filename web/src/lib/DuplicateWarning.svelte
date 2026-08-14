@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { previewUrl, type DuplicateInfo } from '$lib/api';
+	import { formatShortDateTime } from '$lib/photometa';
 
 	interface Props {
 		/** Name of the file being uploaded, shown so the guest knows which one. */
@@ -16,14 +17,7 @@
 	let applyToAll = $state(false);
 
 	const uploadedAt = $derived(
-		info.uploaded_at
-			? new Date(info.uploaded_at).toLocaleString(undefined, {
-					month: 'short',
-					day: 'numeric',
-					hour: 'numeric',
-					minute: '2-digit'
-				})
-			: ''
+		info.uploaded_at ? formatShortDateTime(new Date(info.uploaded_at)) : ''
 	);
 </script>
 

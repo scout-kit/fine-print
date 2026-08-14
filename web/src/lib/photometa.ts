@@ -22,9 +22,13 @@ export interface PhotoMetaFields {
 	mime_type?: string | null;
 }
 
-/** True when the timestamp came from the file's own EXIF data. */
+/**
+ * True when the timestamp is a date the file itself recorded — the camera's
+ * EXIF, or the IPTC DateCreated an editor wrote when exporting. Everything
+ * else is a stand-in and gets marked approximate.
+ */
 export function isExifDate(photo: PhotoMetaFields): boolean {
-	return photo.taken_at_source === 'exif';
+	return photo.taken_at_source === 'exif' || photo.taken_at_source === 'iptc';
 }
 
 /**
@@ -46,9 +50,23 @@ export function formatTakenAt(photo: PhotoMetaFields): string {
 	});
 }
 
-/** "Mar 14, 2:31 PM" — compact form for list rows. */
-export function formatTakenAtShort(photo: PhotoMetaFields): string {
-	return takenAt(photo).toLocaleString(undefined, {
+/**
+ * "Mar 14, 2:31 PM" for a moment in the current year, "Aug 22, 2022" for one
+ * outside it.
+ *
+ * Which year it was is the thing worth knowing about an older photo, and these
+ * appear in rows one truncating line wide, so the year takes the time's place
+ * rather than being added to it.
+ */
+export function formatShortDateTime(when: Date): string {
+	if (when.getFullYear() !== new Date().getFullYear()) {
+		return when.toLocaleDateString(undefined, {
+			month: 'short',
+			day: 'numeric',
+			year: 'numeric'
+		});
+	}
+	return when.toLocaleString(undefined, {
 		month: 'short',
 		day: 'numeric',
 		hour: 'numeric',
@@ -56,12 +74,26 @@ export function formatTakenAtShort(photo: PhotoMetaFields): string {
 	});
 }
 
+/** The compact form of a photo's capture date, for list rows and badges. */
+export function formatTakenAtShort(photo: PhotoMetaFields): string {
+	return formatShortDateTime(takenAt(photo));
+}
+
 /**
  * How the timestamp was obtained, phrased for display. Returns an empty
- * string when it's a genuine EXIF capture time and needs no qualifier.
+ * string when it's a genuine camera capture time and needs no qualifier.
  */
 export function takenAtSourceLabel(photo: PhotoMetaFields): string {
-	return isExifDate(photo) ? '' : 'upload time — no capture date in file';
+	switch (photo.taken_at_source) {
+		case 'exif':
+			return '';
+		case 'iptc':
+			return 'date recorded by the editing software, not the camera';
+		case 'file':
+			return "the file's own date — no capture date in the photo";
+		default:
+			return 'upload time — no capture date in file';
+	}
 }
 
 /** "4032 × 3024" or empty when dimensions are unknown. */
@@ -105,7 +137,7 @@ export function metaRows(photo: PhotoMetaFields): MetaRow[] {
 
 	// Show the upload time separately only when it isn't already the "Taken"
 	// value, so a fallback photo doesn't display the same timestamp twice.
-	if (isExifDate(photo)) {
+	if (photo.taken_at_source && photo.taken_at_source !== 'upload') {
 		rows.push({
 			label: 'Uploaded',
 			value: new Date(photo.created_at).toLocaleString(undefined, {
