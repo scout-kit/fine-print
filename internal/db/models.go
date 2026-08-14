@@ -213,6 +213,10 @@ type Photo struct {
 	TakenAt     sql.NullTime   `db:"taken_at" json:"-"`
 	CameraMake  sql.NullString `db:"camera_make" json:"-"`
 	CameraModel sql.NullString `db:"camera_model" json:"-"`
+	// ContentHash is the SHA-256 of the file as uploaded, used to recognize a
+	// re-upload of the same photo. NULL for photos stored before hashing
+	// existed.
+	ContentHash sql.NullString `db:"content_hash" json:"-"`
 	CreatedAt   time.Time      `db:"created_at" json:"-"`
 	UpdatedAt   time.Time      `db:"updated_at" json:"-"`
 }

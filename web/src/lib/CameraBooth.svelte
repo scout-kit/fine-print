@@ -222,7 +222,9 @@
 			});
 
 			const file = new File([blob], 'booth-capture.jpg', { type: 'image/jpeg' });
-			const result = await uploadPhoto(file, projectId);
+			// Every capture is a fresh shot, and the booth has no way to answer a
+			// duplicate prompt, so it never asks.
+			const result = await uploadPhoto(file, projectId, true);
 			photoId = result.id;
 
 			// Wait for preview to be ready

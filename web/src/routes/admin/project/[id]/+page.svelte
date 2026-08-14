@@ -3,7 +3,9 @@
 	import { page } from '$app/state';
 	import PhotoThumb from '$lib/PhotoThumb.svelte';
 	import PhotoModal from '$lib/PhotoModal.svelte';
-	import { getProject, listPhotos, uploadPhoto, exportPhotos, exportProjectUrl, type Photo } from '$lib/api';
+	import DuplicateWarning from '$lib/DuplicateWarning.svelte';
+	import { getProject, listPhotos, exportPhotos, exportProjectUrl, type Photo } from '$lib/api';
+	import { uploadBatch, type DuplicateDecision, type DuplicatePrompt } from '$lib/upload';
 
 	const projectId = $derived(Number(page.params.id));
 	let projectName = $state('');
@@ -27,13 +29,27 @@
 
 	onMount(load);
 
+	// Set while the duplicate warning is up; resolveDuplicate hands the answer
+	// back to the paused upload loop.
+	let duplicate: DuplicatePrompt | null = $state(null);
+	let resolveDuplicate: ((d: DuplicateDecision) => void) | null = null;
+
+	function decideDuplicate(choice: 'upload' | 'skip', applyToAll: boolean) {
+		duplicate = null;
+		resolveDuplicate?.({ choice, applyToAll });
+		resolveDuplicate = null;
+	}
+
 	async function handlePhotoUpload(e: Event) {
 		const input = e.target as HTMLInputElement;
 		if (!input.files?.length) return;
 		uploading = true;
-		for (const file of Array.from(input.files)) {
-			try { await uploadPhoto(file, projectId); } catch { /* ignore */ }
-		}
+		await uploadBatch(Array.from(input.files), projectId, {
+			onDuplicate: prompt => {
+				duplicate = prompt;
+				return new Promise(resolve => { resolveDuplicate = resolve; });
+			}
+		});
 		input.value = '';
 		uploading = false;
 		await load();
@@ -115,6 +131,15 @@
 			/>
 		{/each}
 	</div>
+{/if}
+
+{#if duplicate}
+	<DuplicateWarning
+		fileName={duplicate.fileName}
+		info={duplicate.info}
+		remaining={duplicate.remaining}
+		onDecide={decideDuplicate}
+	/>
 {/if}
 
 {#if selectedPhoto}

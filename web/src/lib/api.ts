@@ -1,5 +1,44 @@
 const BASE = '/api';
 
+/** An error response from the API, carrying the status and decoded body. */
+export class ApiError extends Error {
+	constructor(
+		message: string,
+		readonly status: number,
+		readonly body: Record<string, unknown> = {}
+	) {
+		super(message);
+		this.name = 'ApiError';
+	}
+}
+
+/** Details of a photo the project already holds, returned instead of registering a duplicate. */
+export interface DuplicateInfo {
+	/** True when the existing copy was uploaded by this same guest session. */
+	mine: boolean;
+	/** When the existing copy was uploaded (RFC3339). */
+	uploaded_at: string;
+	/** Id of the existing copy — only present when it is this guest's own. */
+	photo_id?: number;
+}
+
+/**
+ * isDuplicateUpload reports whether an upload was refused because the project
+ * already has the photo. The upload is registered on a retry with
+ * allowDuplicate set.
+ */
+export function isDuplicateUpload(e: unknown): e is ApiError {
+	return e instanceof ApiError && e.status === 409 && e.body.duplicate === true;
+}
+
+export function duplicateInfo(e: ApiError): DuplicateInfo {
+	return {
+		mine: e.body.mine === true,
+		uploaded_at: String(e.body.uploaded_at ?? ''),
+		photo_id: typeof e.body.photo_id === 'number' ? e.body.photo_id : undefined
+	};
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
 	const opts: RequestInit = {
 		method,
@@ -17,7 +56,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 	if (!res.ok) {
 		const err = await res.json().catch(() => ({ error: res.statusText }));
-		throw new Error(err.error || `Request failed: ${res.status}`);
+		throw new ApiError(err.error || `Request failed: ${res.status}`, res.status, err);
 	}
 
 	if (res.status === 204) return undefined as T;
@@ -25,10 +64,21 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 // Guest API
-export function uploadPhoto(file: File, projectId: number): Promise<{ id: number; status: string }> {
+/**
+ * uploadPhoto registers a photo against a project. Without allowDuplicate it
+ * rejects with a duplicate ApiError (see isDuplicateUpload) when the project
+ * already holds an identical file, having registered nothing; retry with
+ * allowDuplicate once the guest has confirmed.
+ */
+export function uploadPhoto(
+	file: File,
+	projectId: number,
+	allowDuplicate = false
+): Promise<{ id: number; status: string }> {
 	const form = new FormData();
 	form.append('photo', file);
 	form.append('project_id', String(projectId));
+	if (allowDuplicate) form.append('allow_duplicate', 'true');
 	return request('POST', '/photos', form);
 }
 
