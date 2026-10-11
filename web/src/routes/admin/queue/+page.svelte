@@ -3,9 +3,10 @@
 	import PhotoModal from '$lib/PhotoModal.svelte';
 	import {
 		listPhotos, listProjects, listQueue, approvePhoto, rejectPhoto,
-		pauseQueue, resumeQueue, retryJob, cancelJob,
+		pauseQueue, resumeQueue, retryJob, cancelJob, setJobPrinter,
+		getPrinterSettings, listPrinters,
 		previewUrl, renderPreviewUrl, photoStatusName, jobStatusName,
-		type Photo, type Project, type QueueResponse, type PrintJob
+		type Photo, type Project, type QueueResponse, type PrintJob, type PrinterInfo
 	} from '$lib/api';
 	import { createSSE, type SSEConnection } from '$lib/sse';
 
@@ -17,6 +18,9 @@
 	let loading = $state(false);
 	let sse: SSEConnection | null = null;
 	let selectedPhoto: Photo | null = $state(null);
+	let printerMode = $state('round_robin');
+	let enabledPrinters: string[] = $state([]);
+	let cupsPrinters: PrinterInfo[] = $state([]);
 
 	// Per-photo copies for inline editing on approval
 	let copiesMap = $state<Record<number, number>>({});
@@ -26,12 +30,17 @@
 		if (loading) return;
 		loading = true;
 		try {
-			[pendingPhotos, allPhotos, queue, projects] = await Promise.all([
+			let printerSettings;
+			[pendingPhotos, allPhotos, queue, projects, printerSettings, cupsPrinters] = await Promise.all([
 				listPhotos('uploaded'),
 				listPhotos(),
 				listQueue(),
-				listProjects()
+				listProjects(),
+				getPrinterSettings(),
+				listPrinters().catch(() => [])
 			]);
+			printerMode = printerSettings.mode;
+			enabledPrinters = printerSettings.printers.filter(p => p.enabled).map(p => p.name);
 			// Initialize copies from photo data
 			for (const p of pendingPhotos) {
 				if (!(p.id in copiesMap)) {
@@ -108,6 +117,27 @@
 	async function handleRetry(job: PrintJob) {
 		if (!confirmStop(job, 'Stop and retry it')) return;
 		await retryJob(job.id);
+		load();
+	}
+
+	// Offline only when CUPS says so — a printer it didn't report on is
+	// given the benefit of the doubt, matching the queue.
+	function isOffline(name: string): boolean {
+		if (!cupsPrinters.length) return false;
+		const p = cupsPrinters.find(p => p.name === name);
+		return !p || !p.accept_jobs || p.state === 'stopped';
+	}
+
+	function printerLabel(name: string): string {
+		return isOffline(name) ? `${name} (offline)` : name;
+	}
+
+	async function handlePrinterChange(job: PrintJob, name: string) {
+		if (!confirmStop(job, 'Stop it and move it to another printer')) {
+			load(); // put the select back
+			return;
+		}
+		await setJobPrinter(job.id, name);
 		load();
 	}
 
@@ -202,8 +232,19 @@
 						{#if getProjectName(photo?.project_id)}
 							<span class="project-tag">{getProjectName(photo?.project_id)}</span>
 						{/if}
-						{#if job.printer_name}
-							<span class="job-meta">{job.printer_name}</span>
+						{#if printerMode === 'manual'}
+							<select class="job-printer" value={job.printer_name ?? ''}
+								onchange={(e) => handlePrinterChange(job, (e.currentTarget as HTMLSelectElement).value)}>
+								<option value="">Any printer</option>
+								{#each enabledPrinters as name}
+									<option value={name}>{printerLabel(name)}</option>
+								{/each}
+								{#if job.printer_name && !enabledPrinters.includes(job.printer_name)}
+									<option value={job.printer_name} disabled>{job.printer_name} (disabled)</option>
+								{/if}
+							</select>
+						{:else if job.printer_name}
+							<span class="job-meta" class:danger-text={isOffline(job.printer_name)}>{printerLabel(job.printer_name)}</span>
 						{/if}
 						{#if job.error_msg}
 							<span class="job-error">{job.error_msg}</span>
@@ -293,6 +334,7 @@
 
 	.job-info { flex: 1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 	.job-meta { font-size: 0.75rem; color: var(--text-muted); }
+	.job-printer { padding: 2px 6px; font-size: 0.75rem; min-height: auto; width: auto; }
 	.job-error { font-size: 0.75rem; color: var(--danger); width: 100%; }
 	.job-btns { display: flex; gap: 4px; flex-shrink: 0; }
 

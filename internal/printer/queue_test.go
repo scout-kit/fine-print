@@ -14,13 +14,26 @@ import (
 )
 
 // hangingPrinter accepts every job and never finishes one — a printer that
-// has gone away while CUPS still holds its jobs.
+// has gone away while CUPS still holds its jobs. It lists the printers in
+// online, plus any in offline as stopped.
 type hangingPrinter struct {
+	online  []string
+	offline []string
+
 	mu       sync.Mutex
 	canceled []string
 }
 
-func (p *hangingPrinter) ListPrinters() ([]printer.PrinterInfo, error) { return nil, nil }
+func (p *hangingPrinter) ListPrinters() ([]printer.PrinterInfo, error) {
+	var list []printer.PrinterInfo
+	for _, name := range p.online {
+		list = append(list, printer.PrinterInfo{Name: name, State: "idle", AcceptJobs: true})
+	}
+	for _, name := range p.offline {
+		list = append(list, printer.PrinterInfo{Name: name, State: "stopped", AcceptJobs: true})
+	}
+	return list, nil
+}
 func (p *hangingPrinter) Print(name, _ string, _ printer.PrintOptions) (string, error) {
 	return name + "-1", nil
 }
@@ -94,14 +107,17 @@ func waitForCUPSJob(t *testing.T, q *db.Queries, id uint64) *db.PrintJob {
 	return nil
 }
 
-func startQueue(t *testing.T, q *db.Queries, p printer.Printer) (*printer.QueueManager, context.CancelFunc) {
+// startQueue runs a queue with the given printers enabled in the app.
+func startQueue(t *testing.T, q *db.Queries, p printer.Printer, enabled ...string) (*printer.QueueManager, context.CancelFunc) {
 	t.Helper()
 	store, err := storage.NewDiskStore(t.TempDir())
 	if err != nil {
 		t.Fatalf("creating store: %v", err)
 	}
-	if err := q.UpsertPrinterAssignment(context.Background(), "Selphy", true); err != nil {
-		t.Fatalf("enabling printer: %v", err)
+	for _, name := range enabled {
+		if err := q.UpsertPrinterAssignment(context.Background(), name, true); err != nil {
+			t.Fatalf("enabling printer: %v", err)
+		}
 	}
 	qm := printer.NewQueueManager(q, store, p, func(string, any) {})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -114,9 +130,9 @@ func startQueue(t *testing.T, q *db.Queries, p printer.Printer) (*printer.QueueM
 // goroutine polling CUPS, and it held the printer until the server restarted.
 func TestStopJob_HaltsPrintingJobAndCancelsItInCUPS(t *testing.T) {
 	q := newQueueTestDB(t)
-	p := &hangingPrinter{}
+	p := &hangingPrinter{online: []string{"Selphy"}}
 	job := newQueuedJob(t, q)
-	qm, _ := startQueue(t, q, p)
+	qm, _ := startQueue(t, q, p, "Selphy")
 
 	waitForCUPSJob(t, q, job.ID)
 
@@ -145,9 +161,9 @@ func TestStopJob_HaltsPrintingJobAndCancelsItInCUPS(t *testing.T) {
 // still come out.
 func TestShutdown_LeavesCUPSJobAlone(t *testing.T) {
 	q := newQueueTestDB(t)
-	p := &hangingPrinter{}
+	p := &hangingPrinter{online: []string{"Selphy"}}
 	job := newQueuedJob(t, q)
-	qm, stop := startQueue(t, q, p)
+	qm, stop := startQueue(t, q, p, "Selphy")
 
 	waitForCUPSJob(t, q, job.ID)
 	stop()
@@ -167,4 +183,76 @@ func TestStopJob_UnknownJob(t *testing.T) {
 	if qm.StopJob(42) {
 		t.Error("StopJob reported a job that was never started as running")
 	}
+}
+
+func assertPrintedOn(t *testing.T, q *db.Queries, id uint64, want string) {
+	t.Helper()
+	job := waitForCUPSJob(t, q, id)
+	if job.PrinterName.String != want {
+		t.Errorf("job sent to %q, want %q", job.PrinterName.String, want)
+	}
+	if job.CUPSJobID.String != want+"-1" {
+		t.Errorf("CUPS job %q, want %q", job.CUPSJobID.String, want+"-1")
+	}
+}
+
+// An enabled printer CUPS has stopped used to keep receiving jobs, which
+// then sat in CUPS forever.
+func TestQueue_SkipsOfflinePrinter(t *testing.T) {
+	q := newQueueTestDB(t)
+	p := &hangingPrinter{online: []string{"Spare"}, offline: []string{"Selphy"}}
+	job := newQueuedJob(t, q)
+	startQueue(t, q, p, "Selphy", "Spare")
+
+	assertPrintedOn(t, q, job.ID, "Spare")
+}
+
+// In manual mode a job waited for its assigned printer however long it took,
+// and held up every job behind it — forever, if the printer was gone.
+func TestQueue_ManualModeReroutesFromUnavailablePrinter(t *testing.T) {
+	for name, p := range map[string]*hangingPrinter{
+		"stopped in CUPS": {online: []string{"Spare"}, offline: []string{"Selphy"}},
+		"removed in CUPS": {online: []string{"Spare"}},
+		"disabled in app": {online: []string{"Selphy", "Spare"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			q := newQueueTestDB(t)
+			ctx := context.Background()
+			q.SetSetting(ctx, "printer_mode", "manual")
+			job := newQueuedJob(t, q)
+			q.UpdatePrintJobPrinter(ctx, job.ID, "Selphy")
+
+			enabled := []string{"Selphy", "Spare"}
+			if name == "disabled in app" {
+				enabled = []string{"Spare"}
+				q.UpsertPrinterAssignment(ctx, "Selphy", false)
+			}
+			startQueue(t, q, p, enabled...)
+
+			assertPrintedOn(t, q, job.ID, "Spare")
+		})
+	}
+}
+
+func TestQueue_ManualModeUsesAssignedPrinter(t *testing.T) {
+	q := newQueueTestDB(t)
+	ctx := context.Background()
+	q.SetSetting(ctx, "printer_mode", "manual")
+	job := newQueuedJob(t, q)
+	q.UpdatePrintJobPrinter(ctx, job.ID, "Spare")
+	startQueue(t, q, &hangingPrinter{online: []string{"Selphy", "Spare"}}, "Selphy", "Spare")
+
+	assertPrintedOn(t, q, job.ID, "Spare")
+}
+
+// A job that comes back to the queue — retried after hanging on a printer,
+// or requeued when lp failed — gets a different printer if one is free,
+// rather than whichever one round robin happens to land on.
+func TestQueue_RoundRobinRetriesOnAnotherPrinter(t *testing.T) {
+	q := newQueueTestDB(t)
+	job := newQueuedJob(t, q)
+	q.UpdatePrintJobPrinter(context.Background(), job.ID, "Selphy")
+	startQueue(t, q, &hangingPrinter{online: []string{"Selphy", "Spare"}}, "Selphy", "Spare")
+
+	assertPrintedOn(t, q, job.ID, "Spare")
 }

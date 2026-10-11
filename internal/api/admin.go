@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -495,21 +496,92 @@ func (h *Handlers) RetryJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reset to queued
-	if err := h.queries.UpdatePrintJobStatus(r.Context(), id, db.PrintJobStatusQueued, "", ""); err != nil {
+	if err := h.requeueJob(r.Context(), job); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to retry job")
 		return
 	}
 
-	// Also reset photo status
-	h.queries.UpdatePhotoStatus(r.Context(), job.PhotoID, db.PhotoStatusQueued)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "queued"})
+}
 
-	// Resume queue if paused
-	if h.queue.IsPaused() {
-		h.queue.Resume()
+// SetJobPrinter changes the printer a job is assigned to; an empty name lets
+// the queue pick one. A failed or printing job is put back in the queue for
+// the new printer, stopping it first if it's printing — so a job stuck on a
+// printer that has gone away can be moved to one that works.
+//
+// Only manual mode takes a printer: round robin picks its own, and treats a
+// job's printer as the one its last attempt went to, which it then avoids.
+func (h *Handlers) SetJobPrinter(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid job id")
+		return
+	}
+
+	var req struct {
+		PrinterName string `json:"printer_name"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.PrinterName != "" {
+		if mode, _ := h.queries.GetSetting(r.Context(), "printer_mode"); mode != "manual" {
+			writeError(w, http.StatusBadRequest, "printers can only be assigned in manual mode")
+			return
+		}
+		enabled, err := h.queries.GetEnabledPrinters(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list printers")
+			return
+		}
+		if !slices.ContainsFunc(enabled, func(p db.PrinterAssignment) bool { return p.Name == req.PrinterName }) {
+			writeError(w, http.StatusBadRequest, "printer is not enabled")
+			return
+		}
+	}
+
+	job, err := h.stopJobIfPrinting(r.Context(), id)
+	if err != nil || job == nil {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	}
+
+	switch job.StatusID {
+	case db.PrintJobStatusQueued, db.PrintJobStatusFailed, db.PrintJobStatusPrinting:
+	default:
+		writeError(w, http.StatusBadRequest, "job is no longer in the queue")
+		return
+	}
+
+	if err := h.queries.UpdatePrintJobPrinter(r.Context(), id, req.PrinterName); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update printer")
+		return
+	}
+
+	if job.StatusID != db.PrintJobStatusQueued {
+		if err := h.requeueJob(r.Context(), job); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to requeue job")
+			return
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "queued"})
+}
+
+// requeueJob puts a failed or stopped job back in the queue, resuming the
+// queue if a failure had paused it.
+func (h *Handlers) requeueJob(ctx context.Context, job *db.PrintJob) error {
+	if err := h.queries.UpdatePrintJobStatus(ctx, job.ID, db.PrintJobStatusQueued, "", ""); err != nil {
+		return err
+	}
+	h.queries.UpdatePhotoStatus(ctx, job.PhotoID, db.PhotoStatusQueued)
+
+	if h.queue.IsPaused() {
+		h.queue.Resume()
+	}
+	return nil
 }
 
 // CancelJob cancels a queued, printing or failed print job. A printing job is

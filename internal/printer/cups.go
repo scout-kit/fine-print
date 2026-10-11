@@ -2,6 +2,7 @@ package printer
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -42,19 +43,74 @@ func (c *CUPSPrinter) ListPrinters() ([]PrinterInfo, error) {
 		})
 	}
 
-	// Get accepting status
-	stateOut, err := exec.Command("lpstat", "-a").Output()
-	if err == nil {
-		for _, line := range strings.Split(string(stateOut), "\n") {
-			for i := range printers {
-				if strings.HasPrefix(line, printers[i].Name) {
-					printers[i].AcceptJobs = strings.Contains(line, "accepting")
-				}
-			}
-		}
+	// Whether each queue accepts jobs, and whether it's enabled. Either lookup
+	// failing leaves the printers marked accepting with an unknown state, so
+	// a flaky lpstat doesn't take every printer out of rotation.
+	accepting := map[string]bool{}
+	if out, err := lpstatC("-a"); err == nil {
+		accepting = parseAccepting(string(out))
+	}
+	states := map[string]string{}
+	if out, err := lpstatC("-p"); err == nil {
+		states = parseStates(string(out))
+	}
+	for i := range printers {
+		accept, ok := accepting[printers[i].Name]
+		printers[i].AcceptJobs = accept || !ok
+		printers[i].State = states[printers[i].Name]
 	}
 
 	return printers, nil
+}
+
+// lpstatC runs lpstat in the C locale: its status text is translated, and
+// the parsers below match the English wording.
+func lpstatC(args ...string) ([]byte, error) {
+	cmd := exec.Command("lpstat", args...)
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	return cmd.Output()
+}
+
+// parseAccepting reads `lpstat -a` output:
+//
+//	Selphy accepting requests since Sat Oct 11 10:00:00 2026
+//	Other not accepting requests since Sat Oct 11 10:00:00 2026 -
+//		reason unknown
+func parseAccepting(out string) map[string]bool {
+	accepting := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || line[0] == ' ' || line[0] == '\t' {
+			continue
+		}
+		accepting[fields[0]] = fields[1] == "accepting"
+	}
+	return accepting
+}
+
+// parseStates reads `lpstat -p` output into idle, printing or stopped (CUPS's
+// name for a disabled queue — what a printer that errored out becomes):
+//
+//	printer Selphy is idle.  enabled since Sat Oct 11 10:00:00 2026
+//	printer Other now printing Other-12.  enabled since ...
+//	printer Third disabled since Sat Oct 11 10:00:00 2026 -
+func parseStates(out string) map[string]string {
+	states := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || fields[0] != "printer" {
+			continue
+		}
+		switch fields[2] {
+		case "is":
+			states[fields[1]] = "idle"
+		case "now":
+			states[fields[1]] = "printing"
+		case "disabled":
+			states[fields[1]] = "stopped"
+		}
+	}
+	return states
 }
 
 func (c *CUPSPrinter) Print(printerName, filePath string, opts PrintOptions) (string, error) {

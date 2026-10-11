@@ -65,6 +65,7 @@ func RegisterRoutes(mux *http.ServeMux, handlers *api.Handlers, queries *db.Quer
 	mux.Handle("POST /api/admin/queue/resume", adminAuth(http.HandlerFunc(handlers.ResumeQueue)))
 	mux.Handle("POST /api/admin/queue/{id}/retry", adminAuth(http.HandlerFunc(handlers.RetryJob)))
 	mux.Handle("POST /api/admin/queue/{id}/cancel", adminAuth(http.HandlerFunc(handlers.CancelJob)))
+	mux.Handle("PUT /api/admin/queue/{id}/printer", adminAuth(http.HandlerFunc(handlers.SetJobPrinter)))
 
 	// Projects
 	mux.Handle("GET /api/admin/projects", adminAuth(http.HandlerFunc(handlers.ListProjects)))

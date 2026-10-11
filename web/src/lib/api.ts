@@ -196,6 +196,12 @@ export function cancelJob(id: number): Promise<{ status: string }> {
 	return request('POST', `/admin/queue/${id}/cancel`);
 }
 
+/** Assigns a job to a printer (manual mode only); '' lets the queue pick. A
+ * failed or printing job goes back in the queue for the new printer. */
+export function setJobPrinter(id: number, printerName: string): Promise<{ status: string }> {
+	return request('PUT', `/admin/queue/${id}/printer`, { printer_name: printerName });
+}
+
 export function listProjects(): Promise<Project[]> {
 	return request('GET', '/admin/projects');
 }
@@ -638,6 +644,8 @@ export interface QueueResponse {
 export interface PrinterInfo {
 	name: string;
 	device: string;
+	/** idle, printing or stopped; empty if CUPS didn't say. */
+	state: string;
 	accept_jobs: boolean;
 }
 

@@ -3,6 +3,7 @@ package printer
 import (
 	"context"
 	"log"
+	"slices"
 	"sync"
 	"time"
 
@@ -98,47 +99,71 @@ func (q *QueueManager) tryAssignJob(ctx context.Context) bool {
 		mode = "round_robin"
 	}
 
-	// Find an available printer (not currently printing)
-	q.mu.Lock()
-	var availablePrinters []string
-	for _, p := range enabledPrinters {
-		if _, busy := q.active[p.Name]; !busy {
-			availablePrinters = append(availablePrinters, p.Name)
-		}
-	}
-	q.mu.Unlock()
-
-	if len(availablePrinters) == 0 {
-		return false // All printers busy
-	}
-
 	// Get next queued job
 	job, err := q.queries.GetNextQueuedJob(ctx)
 	if err != nil || job == nil {
 		return false
 	}
+	assigned := job.PrinterName.String
+
+	// Find the printers that could take it: enabled, reachable according to
+	// CUPS, and not already printing. If CUPS can't be asked, reachability
+	// is assumed rather than stalling the queue.
+	online, known := q.onlinePrinters()
+	q.mu.Lock()
+	var availablePrinters []string
+	assignedBusy := false
+	for _, p := range enabledPrinters {
+		if known && !online[p.Name] {
+			continue
+		}
+		if _, busy := q.active[p.Name]; busy {
+			assignedBusy = assignedBusy || p.Name == assigned
+			continue
+		}
+		availablePrinters = append(availablePrinters, p.Name)
+	}
+	q.mu.Unlock()
 
 	// Pick a printer
 	var printerName string
-	if mode == "manual" && job.PrinterName.Valid && job.PrinterName.String != "" {
-		// Manual mode: use the assigned printer if available
-		printerName = job.PrinterName.String
-		available := false
-		for _, p := range availablePrinters {
-			if p == printerName {
-				available = true
-				break
-			}
+	if mode == "manual" && assigned != "" {
+		// Manual mode: use the assigned printer, waiting for it if it's busy.
+		// If it's gone offline or been disabled, waiting would hold up the
+		// whole queue indefinitely, so the job moves to another printer.
+		if assignedBusy {
+			return false
 		}
-		if !available {
-			return false // Assigned printer is busy
+		if slices.Contains(availablePrinters, assigned) {
+			printerName = assigned
+		} else if len(availablePrinters) > 0 {
+			log.Printf("Print job %d: assigned printer %s is unavailable, reassigning", job.ID, assigned)
 		}
-	} else {
-		// Round-robin: pick the next available printer
+	}
+	if printerName == "" {
+		if len(availablePrinters) == 0 {
+			return false // All printers busy or offline
+		}
+		// A job that already has a printer was tried there and came back —
+		// requeued after lp failed, or retried by the admin — so another
+		// printer gets the next attempt if one is free.
+		candidates := availablePrinters
+		if others := slices.DeleteFunc(slices.Clone(candidates), func(p string) bool { return p == assigned }); len(others) > 0 {
+			candidates = others
+		}
 		q.mu.Lock()
-		printerName = availablePrinters[q.rrIndex%len(availablePrinters)]
+		printerName = candidates[q.rrIndex%len(candidates)]
 		q.rrIndex++
 		q.mu.Unlock()
+	}
+
+	if assigned != "" && printerName != assigned {
+		q.broadcast("print_rerouted", map[string]any{
+			"job_id":       job.ID,
+			"photo_id":     job.PhotoID,
+			"from_printer": assigned,
+			"printer_name": printerName,
+		})
 	}
 
 	// Assign printer and mark as printing before spawning goroutine
@@ -149,6 +174,21 @@ func (q *QueueManager) tryAssignJob(ctx context.Context) bool {
 	// Process in a goroutine (allows concurrent printing on multiple printers)
 	q.start(ctx, job, printerName)
 	return true
+}
+
+// onlinePrinters returns the printers CUPS can currently print to. known is
+// false if CUPS couldn't be asked.
+func (q *QueueManager) onlinePrinters() (online map[string]bool, known bool) {
+	printers, err := q.printer.ListPrinters()
+	if err != nil {
+		log.Printf("Print queue: listing printers: %v", err)
+		return nil, false
+	}
+	online = make(map[string]bool, len(printers))
+	for _, p := range printers {
+		online[p.Name] = p.Online()
+	}
+	return online, true
 }
 
 // tryAssignJobLegacy handles the case where no printers are configured in the DB.

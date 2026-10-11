@@ -15,8 +15,14 @@ type Printer interface {
 type PrinterInfo struct {
 	Name       string `json:"name"`
 	Device     string `json:"device"`
-	State      string `json:"state"`
+	State      string `json:"state"` // idle, printing, stopped; empty if unknown
 	AcceptJobs bool   `json:"accept_jobs"`
+}
+
+// Online reports whether CUPS can currently send jobs to the printer. A
+// disabled ("stopped") queue holds jobs without printing them.
+func (p PrinterInfo) Online() bool {
+	return p.AcceptJobs && p.State != "stopped"
 }
 
 type PrintOptions struct {

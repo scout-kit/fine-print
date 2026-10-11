@@ -770,10 +770,12 @@ func (q *Queries) DeletePrinterAssignment(ctx context.Context, name string) erro
 	return err
 }
 
-// UpdatePrintJobPrinter sets which printer a job is assigned to.
+// UpdatePrintJobPrinter sets which printer a job is assigned to. An empty
+// name clears the assignment.
 func (q *Queries) UpdatePrintJobPrinter(ctx context.Context, id uint64, printerName string) error {
 	_, err := q.db.ExecContext(ctx,
-		"UPDATE print_jobs SET printer_name = ? WHERE id = ?", printerName, id)
+		"UPDATE print_jobs SET printer_name = ? WHERE id = ?",
+		sql.NullString{String: printerName, Valid: printerName != ""}, id)
 	return err
 }
 
