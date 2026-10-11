@@ -474,7 +474,9 @@ func (h *Handlers) ResumeQueue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "resumed"})
 }
 
-// RetryJob retries a failed print job.
+// RetryJob puts a failed or printing job back in the queue. A printing job is
+// stopped first, canceling it in CUPS — the way out of a job stuck on a
+// printer that will never finish it.
 func (h *Handlers) RetryJob(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -482,14 +484,14 @@ func (h *Handlers) RetryJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := h.queries.GetPrintJob(r.Context(), id)
+	job, err := h.stopJobIfPrinting(r.Context(), id)
 	if err != nil || job == nil {
 		writeError(w, http.StatusNotFound, "job not found")
 		return
 	}
 
-	if job.StatusID != db.PrintJobStatusFailed {
-		writeError(w, http.StatusBadRequest, "job is not in failed status")
+	if job.StatusID != db.PrintJobStatusFailed && job.StatusID != db.PrintJobStatusPrinting {
+		writeError(w, http.StatusBadRequest, "only failed or printing jobs can be retried")
 		return
 	}
 
@@ -510,7 +512,8 @@ func (h *Handlers) RetryJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "queued"})
 }
 
-// CancelJob cancels a queued or failed print job.
+// CancelJob cancels a queued, printing or failed print job. A printing job is
+// also canceled in CUPS.
 func (h *Handlers) CancelJob(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -518,8 +521,16 @@ func (h *Handlers) CancelJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the job to find the photo
-	job, _ := h.queries.GetPrintJob(r.Context(), id)
+	job, err := h.stopJobIfPrinting(r.Context(), id)
+	if err != nil || job == nil {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	}
+
+	if job.StatusID == db.PrintJobStatusPrinted {
+		writeError(w, http.StatusBadRequest, "job has already printed")
+		return
+	}
 
 	if err := h.queries.UpdatePrintJobStatus(r.Context(), id, db.PrintJobStatusCanceled, "", ""); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to cancel job")
@@ -527,11 +538,25 @@ func (h *Handlers) CancelJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// If no other active jobs exist for this photo, revert photo status to uploaded
-	if job != nil {
-		h.revertPhotoStatusIfNoActiveJobs(r.Context(), job.PhotoID)
-	}
+	h.revertPhotoStatusIfNoActiveJobs(r.Context(), job.PhotoID)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "canceled"})
+}
+
+// stopJobIfPrinting halts job id if it is printing and returns it as it
+// stands afterwards. The job is re-read after stopping because it may have
+// finished on its own in the meantime, and that outcome shouldn't be
+// overwritten.
+func (h *Handlers) stopJobIfPrinting(ctx context.Context, id uint64) (*db.PrintJob, error) {
+	job, err := h.queries.GetPrintJob(ctx, id)
+	if err != nil || job == nil || job.StatusID != db.PrintJobStatusPrinting {
+		return job, err
+	}
+	if !h.queue.StopJob(id) {
+		// Nothing is working on it — left over from before a restart.
+		return job, nil
+	}
+	return h.queries.GetPrintJob(ctx, id)
 }
 
 // revertPhotoStatusIfNoActiveJobs checks if a photo has any remaining active

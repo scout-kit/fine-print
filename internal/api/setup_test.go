@@ -43,14 +43,15 @@ func newTestHandlers(t *testing.T) (*api.Handlers, *db.Queries) {
 	}
 	q := db.NewQueries(dbx)
 	store := settings.NewStore(q)
+	p := &stubPrinter{printers: []printer.PrinterInfo{{Name: "Selphy_CP1500", State: "idle", AcceptJobs: true}}}
 
 	h := api.NewHandlers(
 		config.DefaultConfig(),
 		q,
 		nil, // storage unused
 		nil, // pipeline unused
-		nil, // queue unused
-		&stubPrinter{printers: []printer.PrinterInfo{{Name: "Selphy_CP1500", State: "idle", AcceptJobs: true}}},
+		printer.NewQueueManager(q, nil, p, func(string, any) {}), // never run
+		p,
 		nil, // qr unused
 		store,
 		nil, // diskguard unused

@@ -99,8 +99,23 @@
 	async function handleReject(id: number) { await rejectPhoto(id); load(); }
 	async function handlePause() { await pauseQueue(); load(); }
 	async function handleResume() { await resumeQueue(); load(); }
-	async function handleRetry(id: number) { await retryJob(id); load(); }
-	async function handleCancel(id: number) { await cancelJob(id); load(); }
+	// A printing job is also canceled in CUPS, which can waste a sheet the
+	// printer has already started on — so check before stopping one.
+	function confirmStop(job: PrintJob, action: string): boolean {
+		return job.status_id !== 2 || confirm(`This photo is printing. ${action} anyway?`);
+	}
+
+	async function handleRetry(job: PrintJob) {
+		if (!confirmStop(job, 'Stop and retry it')) return;
+		await retryJob(job.id);
+		load();
+	}
+
+	async function handleCancel(job: PrintJob) {
+		if (!confirmStop(job, 'Cancel it')) return;
+		await cancelJob(job.id);
+		load();
+	}
 </script>
 
 <div class="tabs">
@@ -195,12 +210,10 @@
 						{/if}
 					</div>
 					<div class="job-btns">
-						{#if job.status_id === 4}
-							<button class="ghost sm" onclick={() => handleRetry(job.id)}>Retry</button>
+						{#if job.status_id === 2 || job.status_id === 4}
+							<button class="ghost sm" onclick={() => handleRetry(job)}>Retry</button>
 						{/if}
-						{#if job.status_id === 1 || job.status_id === 4}
-							<button class="ghost sm danger-text" onclick={() => handleCancel(job.id)}>Cancel</button>
-						{/if}
+						<button class="ghost sm danger-text" onclick={() => handleCancel(job)}>Cancel</button>
 					</div>
 				</div>
 			{/each}

@@ -20,11 +20,18 @@ type QueueManager struct {
 
 	mu       sync.Mutex
 	paused   bool
-	active   map[string]*db.PrintJob // printer name -> active job
+	active   map[string]*activeJob // printer name -> active job
 	resumeCh chan struct{}
 
 	// Round-robin state
 	rrIndex int
+}
+
+// activeJob is a job being worked on by a processJob goroutine.
+type activeJob struct {
+	job    *db.PrintJob
+	cancel context.CancelFunc // halts the job; see StopJob
+	done   chan struct{}      // closed once processJob has returned
 }
 
 func NewQueueManager(queries *db.Queries, store storage.Store, printer Printer, broadcast func(eventType string, data any)) *QueueManager {
@@ -33,7 +40,7 @@ func NewQueueManager(queries *db.Queries, store storage.Store, printer Printer, 
 		store:     store,
 		printer:   printer,
 		broadcast: broadcast,
-		active:    make(map[string]*db.PrintJob),
+		active:    make(map[string]*activeJob),
 		resumeCh:  make(chan struct{}, 1),
 	}
 }
@@ -139,12 +146,8 @@ func (q *QueueManager) tryAssignJob(ctx context.Context) bool {
 	q.queries.UpdatePrintJobPrinter(ctx, job.ID, printerName)
 	q.queries.UpdatePrintJobStatus(ctx, job.ID, db.PrintJobStatusPrinting, "", "")
 
-	q.mu.Lock()
-	q.active[printerName] = job
-	q.mu.Unlock()
-
 	// Process in a goroutine (allows concurrent printing on multiple printers)
-	go q.processJob(ctx, job, printerName)
+	q.start(ctx, job, printerName)
 	return true
 }
 
@@ -170,22 +173,37 @@ func (q *QueueManager) tryAssignJobLegacy(ctx context.Context) bool {
 
 	q.queries.UpdatePrintJobStatus(ctx, job.ID, db.PrintJobStatusPrinting, "", "")
 
-	q.mu.Lock()
-	q.active[printerName] = job
-	q.mu.Unlock()
-
-	go q.processJob(ctx, job, printerName)
+	q.start(ctx, job, printerName)
 	return true
 }
 
-func (q *QueueManager) processJob(ctx context.Context, job *db.PrintJob, printerName string) {
-	// active map is set by caller (tryAssignJob) before spawning this goroutine
-	defer func() {
-		q.mu.Lock()
-		delete(q.active, printerName)
-		q.mu.Unlock()
-	}()
+// start marks printerName busy with job and spawns its processJob goroutine.
+// The active entry is registered here, before the goroutine runs, so the main
+// loop can't hand the same printer a second job in the meantime.
+func (q *QueueManager) start(ctx context.Context, job *db.PrintJob, printerName string) {
+	jobCtx, cancel := context.WithCancel(ctx)
+	aj := &activeJob{job: job, cancel: cancel, done: make(chan struct{})}
 
+	q.mu.Lock()
+	q.active[printerName] = aj
+	q.mu.Unlock()
+
+	go func() {
+		defer close(aj.done)
+		defer cancel()
+		defer func() {
+			q.mu.Lock()
+			delete(q.active, printerName)
+			q.mu.Unlock()
+		}()
+		q.processJob(ctx, jobCtx, job, printerName)
+	}()
+}
+
+// processJob prints job on printerName. jobCtx is canceled when the job is
+// halted — by StopJob or by ctx (server shutdown) ending. A halted job's
+// status is left alone: whoever halted it decides what it becomes.
+func (q *QueueManager) processJob(ctx, jobCtx context.Context, job *db.PrintJob, printerName string) {
 	photo, err := q.queries.GetPhoto(ctx, job.PhotoID)
 	if err != nil || photo == nil {
 		log.Printf("Error getting photo for print job %d: %v", job.ID, err)
@@ -217,6 +235,15 @@ func (q *QueueManager) processJob(ctx context.Context, job *db.PrintJob, printer
 		MediaSize: mediaSize,
 		Copies:    1,
 	})
+	if jobCtx.Err() != nil {
+		// Halted while lp was submitting. A job that reached CUPS would
+		// otherwise print with nobody tracking it — unless the server is
+		// shutting down, in which case it should finish on its own.
+		if err == nil && ctx.Err() == nil {
+			q.cancelCUPSJob(job.ID, cupsJobID)
+		}
+		return
+	}
 	if err != nil {
 		// Printer unreachable/offline — requeue the job, don't fail it
 		log.Printf("Print job %d: printer %s unavailable, requeueing: %v", job.ID, printerName, err)
@@ -227,7 +254,13 @@ func (q *QueueManager) processJob(ctx context.Context, job *db.PrintJob, printer
 
 	q.queries.UpdatePrintJobStatus(ctx, job.ID, db.PrintJobStatusPrinting, cupsJobID, "")
 
-	if err := q.pollJob(ctx, job.ID, cupsJobID); err != nil {
+	if err := q.pollJob(jobCtx, job.ID, cupsJobID); err != nil {
+		if jobCtx.Err() != nil {
+			if ctx.Err() == nil {
+				q.cancelCUPSJob(job.ID, cupsJobID)
+			}
+			return
+		}
 		// CUPS accepted the job but it failed during printing — this is a real failure
 		q.failJob(ctx, job, err.Error())
 		return
@@ -292,6 +325,48 @@ func (q *QueueManager) failJob(ctx context.Context, job *db.PrintJob, errMsg str
 	})
 }
 
+func (q *QueueManager) cancelCUPSJob(jobID uint64, cupsJobID string) {
+	if err := q.printer.CancelJob(cupsJobID); err != nil {
+		log.Printf("Print job %d: canceling CUPS job %s: %v", jobID, cupsJobID, err)
+	}
+}
+
+// stopTimeout bounds how long StopJob waits for a job's goroutine to exit.
+// The goroutine notices a halt immediately unless it is inside an lp call.
+const stopTimeout = 15 * time.Second
+
+// StopJob halts a job that is currently printing, canceling its CUPS job if
+// one was submitted. It reports whether the job was running here; a job left
+// marked printing by an earlier run of the server has no goroutine, and false
+// is returned for it.
+//
+// StopJob returns once the job's goroutine has exited, so the caller can set
+// the job's status without it being overwritten. The job's status itself is
+// not changed — that's the caller's decision (cancel, requeue, ...).
+func (q *QueueManager) StopJob(jobID uint64) bool {
+	q.mu.Lock()
+	var aj *activeJob
+	for _, a := range q.active {
+		if a.job.ID == jobID {
+			aj = a
+			break
+		}
+	}
+	q.mu.Unlock()
+
+	if aj == nil {
+		return false
+	}
+
+	aj.cancel()
+	select {
+	case <-aj.done:
+	case <-time.After(stopTimeout):
+		log.Printf("Print job %d: still stopping after %s", jobID, stopTimeout)
+	}
+	return true
+}
+
 // Pause pauses the print queue.
 func (q *QueueManager) Pause() {
 	q.mu.Lock()
@@ -330,7 +405,7 @@ func (q *QueueManager) ActiveJobs() map[string]*db.PrintJob {
 	defer q.mu.Unlock()
 	result := make(map[string]*db.PrintJob, len(q.active))
 	for k, v := range q.active {
-		result[k] = v
+		result[k] = v.job
 	}
 	return result
 }
